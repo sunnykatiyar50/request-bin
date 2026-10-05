@@ -1,19 +1,26 @@
 # docker compose up --build
-# ADMIN_PASSWORD and SESSION_SECRET must be set in .env (see sample.env).
+#
+# All settings come from .env (see sample.env); ADMIN_PASSWORD and SESSION_SECRET are required.
+# PORT in .env picks the host port; inside the container the app always listens on 3007.
+# Requires Docker Compose 2.24 or later.
 services:
   request-bin:
     build: .
     image: request-bin:latest
+    init: true
     ports:
       - "${PORT:-3007}:3007"
+    env_file:
+      - path: .env
+        required: false
+    # Values here override .env. They pin container-internal paths and ports, and stop Compose
+    # from starting at all when a required secret is missing.
     environment:
+      PORT: 3007
+      DATABASE_PATH: /app/data/request-bin.sqlite
+      LOG_DIR: /app/logs
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
-      TRUST_PROXY: ${TRUST_PROXY:-}
-      MAX_BODY_KB: ${MAX_BODY_KB:-1024}
-      MAX_REQUESTS_PER_BIN: ${MAX_REQUESTS_PER_BIN:-500}
-      RETENTION_DAYS: ${RETENTION_DAYS:-7}
     volumes:
       - request-bin-data:/app/data
       - request-bin-logs:/app/logs

@@ -50,13 +50,22 @@ For development with auto-restart: `npm run dev`. To run the tests: `npm test`.
 
 ## Running with Docker
 
-Set `ADMIN_PASSWORD` and `SESSION_SECRET` in `.env`, then:
+Requires Docker with the Compose plugin, version 2.24 or later. Set `ADMIN_PASSWORD` and `SESSION_SECRET` in `.env`, then:
 
 ```
 docker compose up --build
 ```
 
 The service is available at `http://localhost:3007`. Data and logs are kept in the `request-bin-data` and `request-bin-logs` volumes. To delete them, run `docker compose down -v`.
+
+Compose passes every setting in `.env` to the container. Inside the container the app always listens on port `3007` (`PORT` in `.env` only chooses the host port) and stores data in `/app/data` and logs in `/app/logs`. Stopping the container shuts the app down cleanly.
+
+Without Compose:
+```
+docker build -t request-bin .
+docker run -d -p 3007:3007 -v request-bin-data:/app/data --env-file .env -e PORT=3007 --init --name request-bin request-bin
+```
+`-e PORT=3007` overrides any `PORT` in `.env`, so the app listens on the port that `-p` publishes. Use named volumes rather than bind mounts. The app runs as the `node` user (UID 1000), so a bind-mounted directory on Linux must be writable by it: `sudo chown 1000:1000 ./data`.
 
 If you put the service behind a reverse proxy (nginx, Traefik, etc.), set `TRUST_PROXY=1` so client IPs are recorded correctly, rate limiting works per client, and session cookies are marked `Secure` over HTTPS.
 

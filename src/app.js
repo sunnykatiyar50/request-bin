@@ -35,7 +35,36 @@ function main() {
     scheduleRetention(requestModel, config.retentionDays);
 
     const app = createApp({ config, binModel, requestModel });
-    app.listen(config.port, () => log(`Request Bin is running on http://localhost:${config.port}`));
+    const server = app.listen(config.port, () => log(`Request Bin is running on http://localhost:${config.port}`));
+    handleShutdown(server, db);
+}
+
+// Stop accepting connections, let in-flight requests finish, then close the database.
+// Without this, `docker stop` waits its full timeout and then kills the process.
+function handleShutdown(server, db) {
+    let shuttingDown = false;
+    const shutdown = signal => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        log(`${signal} received, shutting down`);
+        setTimeout(() => {
+            log('Shutdown timed out, exiting');
+            process.exit(1);
+        }, 8000).unref();
+        server.close(() => {
+            try {
+                db.close();
+            } catch (error) {
+                log(`Error closing database: ${error.message}`);
+            }
+            process.exit(0);
+        });
+        server.closeIdleConnections();
+        // Live-update (SSE) connections never finish on their own; give normal requests a moment, then drop them
+        setTimeout(() => server.closeAllConnections(), 2000).unref();
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 try {
