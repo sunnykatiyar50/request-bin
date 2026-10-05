@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Request Bin</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="topbar">
+        <h1>Request Bin</h1>
+        <span class="spacer"></span>
+        <button id="newBinButton" class="primary">New bin</button>
+        <button id="logoutButton" class="secondary">Sign out</button>
+    </header>
+
+    <main class="layout">
+        <!-- Bins -->
+        <section class="panel bins-panel">
+            <h2>Bins</h2>
+            <ul id="binList" class="list"></ul>
+        </section>
+
+        <!-- Requests of the selected bin -->
+        <section class="panel requests-panel">
+            <div id="noBinSelected" class="empty">Create or select a bin to start capturing requests.</div>
+            <div id="binView" class="hidden">
+                <div class="bin-header">
+                    <h2 id="binTitle"></h2>
+                    <span id="liveIndicator" class="live" title="Live updates">● live</span>
+                </div>
+                <div class="bin-url-row">
+                    <code id="binUrl"></code>
+                    <button id="copyUrlButton" class="small">Copy</button>
+                </div>
+                <p id="binSecretInfo" class="muted hidden">
+                    This bin requires its secret in the <code>X-Bin-Secret</code> header or a <code>?secret=</code> query parameter.
+                </p>
+
+                <details id="binSettings">
+                    <summary>Response settings</summary>
+                    <form id="binSettingsForm" class="settings-form">
+                        <label for="binNameInput">Name</label>
+                        <input id="binNameInput" type="text" maxlength="100" required />
+                        <label for="responseStatusInput">Status code</label>
+                        <input id="responseStatusInput" type="number" min="200" max="599" required />
+                        <label for="responseTypeInput">Content type</label>
+                        <select id="responseTypeInput">
+                            <option>application/json</option>
+                            <option>text/plain</option>
+                            <option>application/xml</option>
+                            <option>text/xml</option>
+                        </select>
+                        <label for="responseBodyInput">Body</label>
+                        <textarea id="responseBodyInput" rows="4"></textarea>
+                        <label class="checkbox"><input id="redactInput" type="checkbox" /> Redact sensitive headers (Authorization, Cookie, ...)</label>
+                        <div class="row">
+                            <button type="submit" class="primary small">Save</button>
+                            <button type="button" id="deleteBinButton" class="danger small">Delete bin</button>
+                        </div>
+                    </form>
+                </details>
+
+                <div class="filters">
+                    <select id="methodFilter">
+                        <option value="">All methods</option>
+                        <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option>
+                        <option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+                    </select>
+                    <input id="searchInput" type="search" placeholder="Search path, headers, body..." />
+                    <button id="clearRequestsButton" class="danger small">Clear</button>
+                </div>
+                <ul id="requestList" class="list requests"></ul>
+                <div class="pagination">
+                    <button id="prevPage" class="small" disabled>Previous</button>
+                    <span id="pageInfo"></span>
+                    <button id="nextPage" class="small" disabled>Next</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Selected request -->
+        <section class="panel detail-panel">
+            <div id="noRequestSelected" class="empty">Select a request to inspect it.</div>
+            <div id="requestDetail" class="hidden">
+                <div class="detail-header">
+                    <span id="detailMethod" class="method"></span>
+                    <code id="detailPath"></code>
+                    <span class="spacer"></span>
+                    <button id="copyCurlButton" class="small">Copy as cURL</button>
+                </div>
+                <table class="kv"><tbody id="detailOverview"></tbody></table>
+                <h3>Query</h3>
+                <table class="kv"><tbody id="detailQuery"></tbody></table>
+                <h3>Headers</h3>
+                <table class="kv"><tbody id="detailHeaders"></tbody></table>
+                <h3>Body <span id="detailBodyInfo" class="muted"></span></h3>
+                <pre id="detailBody" class="body"></pre>
+            </div>
+        </section>
+    </main>
+    <script src="dashboard.js"></script>
+</body>
+</html>

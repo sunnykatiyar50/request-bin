@@ -1,0 +1,24 @@
+# docker compose up --build
+# ADMIN_PASSWORD and SESSION_SECRET must be set in .env (see sample.env).
+services:
+  request-bin:
+    build: .
+    image: request-bin:latest
+    ports:
+      - "${PORT:-3007}:3007"
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      MAX_BODY_KB: ${MAX_BODY_KB:-1024}
+      MAX_REQUESTS_PER_BIN: ${MAX_REQUESTS_PER_BIN:-500}
+      RETENTION_DAYS: ${RETENTION_DAYS:-7}
+    volumes:
+      - request-bin-data:/app/data
+      - request-bin-logs:/app/logs
+    restart: unless-stopped
+
+volumes:
+  request-bin-data:
+  request-bin-logs:

@@ -1,0 +1,25 @@
+{
+  "name": "request-bin",
+  "version": "0.1.0",
+  "description": "Self-hosted HTTP request collector: capture any request sent to a bin URL and inspect it live in a web dashboard.",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "Apache-2.0",
+  "private": true,
+  "dependencies": {
+    "dotenv": "^18.0.5",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
+  }
+}
