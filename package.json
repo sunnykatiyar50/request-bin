@@ -1,25 +1,27 @@
 {
   "name": "request-bin",
-  "version": "0.1.0",
-  "description": "Self-hosted HTTP request collector: capture any request sent to a bin URL and inspect it live in a web dashboard.",
+  "version": "1.0.0",
+  "description": "Self-hosted HTTP request collector: capture any request sent to a bin URL and inspect it, parsed and prettified, in a web dashboard.",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
-    "dev": "node --watch src/app.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "start": "node --disable-warning=ExperimentalWarning src/app.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/app.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/**/*.test.js\""
   },
-  "engines": {
-    "node": ">=22.13"
-  },
-  "license": "Apache-2.0",
-  "private": true,
   "dependencies": {
-    "dotenv": "^18.0.5",
+    "dotenv": "^16.5.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
-    "helmet": "^8.3.0"
+    "helmet": "^8.3.0",
+    "mysql2": "^3.24.5",
+    "pg": "^8.16.0"
   },
   "devDependencies": {
     "supertest": "^7.3.1"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
   }
 }

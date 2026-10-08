@@ -1,41 +1,47 @@
 require('dotenv').config({ quiet: true });
 
 const { loadConfig } = require('./config');
-const { openDatabase } = require('./db');
+const initializeDatabase = require('./database/initDatabase');
 const BinModel = require('./models/binModel');
 const RequestModel = require('./models/requestModel');
+const ApiKeyModel = require('./models/apiKeyModel');
 const { createApp } = require('./server');
-const { log } = require('./utils/logger');
+const { logToFile } = require('./utils/logger');
 
 const HOUR_MS = 60 * 60 * 1000;
 
 function scheduleRetention(requestModel, retentionDays) {
     if (!retentionDays) return;
-    const purge = () => {
+    const purge = async () => {
         try {
-            const deleted = requestModel.deleteOlderThan(new Date(Date.now() - retentionDays * 24 * HOUR_MS));
-            if (deleted) log(`Retention: deleted ${deleted} request(s) older than ${retentionDays} day(s)`);
+            const cutoff = new Date(Date.now() - retentionDays * 24 * HOUR_MS);
+            const deleted = await requestModel.deleteOlderThan(cutoff);
+            if (deleted) logToFile(`Retention: deleted ${deleted} request(s) older than ${retentionDays} day(s)`);
         } catch (error) {
-            log(`Retention cleanup failed: ${error.message}`);
+            logToFile(`Retention cleanup failed: ${error.message}`);
         }
     };
     purge();
     setInterval(purge, HOUR_MS).unref();
 }
 
-function main() {
+async function main() {
     const config = loadConfig();
     if (config.authDisabled) {
-        log('WARNING: AUTH_DISABLED=true - the dashboard and API are open to anyone who can reach this server');
+        logToFile('WARNING: AUTH_DISABLED=true - the API and dashboard are open to anyone who can reach this server');
     }
 
-    const db = openDatabase(config.databasePath);
-    const binModel = new BinModel(db);
-    const requestModel = new RequestModel(db, config);
+    const db = await initializeDatabase();
+    // API keys and bin secrets are encrypted with a key derived from SESSION_SECRET
+    const binModel = new BinModel(db, { encryptionSecret: config.sessionSecret });
+    const requestModel = new RequestModel(db, { maxRequestsPerBin: config.maxRequestsPerBin });
+    const apiKeyModel = new ApiKeyModel(db, { encryptionSecret: config.sessionSecret });
     scheduleRetention(requestModel, config.retentionDays);
 
-    const app = createApp({ config, binModel, requestModel });
-    const server = app.listen(config.port, () => log(`Request Bin is running on http://localhost:${config.port}`));
+    const app = createApp({ config, binModel, requestModel, apiKeyModel });
+    const server = app.listen(config.port, () => {
+        logToFile(`Server is running on http://localhost:${config.port}`);
+    });
     handleShutdown(server, db);
 }
 
@@ -46,16 +52,16 @@ function handleShutdown(server, db) {
     const shutdown = signal => {
         if (shuttingDown) return;
         shuttingDown = true;
-        log(`${signal} received, shutting down`);
+        logToFile(`${signal} received, shutting down`);
         setTimeout(() => {
-            log('Shutdown timed out, exiting');
+            logToFile('Shutdown timed out, exiting');
             process.exit(1);
         }, 8000).unref();
-        server.close(() => {
+        server.close(async () => {
             try {
-                db.close();
+                await db.close();
             } catch (error) {
-                log(`Error closing database: ${error.message}`);
+                logToFile(`Error closing database: ${error.message}`);
             }
             process.exit(0);
         });
@@ -67,9 +73,7 @@ function handleShutdown(server, db) {
     process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-try {
-    main();
-} catch (error) {
-    log(`Startup failed: ${error.stack || error}`);
+main().catch(error => {
+    logToFile(`Startup failed: ${error.stack || error}`);
     process.exit(1);
-}
+});

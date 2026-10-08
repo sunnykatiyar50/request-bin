@@ -1,15 +1,14 @@
 const { EventEmitter } = require('events');
 
-// In-process pub/sub used to push newly captured requests to dashboard SSE streams
+// In-process pub/sub: the capture route publishes each new request, and the dashboard's
+// server-sent-events stream (/api/stream) forwards them to open browsers.
 const events = new EventEmitter();
 events.setMaxListeners(0);
 
-const channel = binId => `bin:${binId}`;
-
 module.exports = {
-    publish: (binId, payload) => events.emit(channel(binId), payload),
-    subscribe: (binId, listener) => {
-        events.on(channel(binId), listener);
-        return () => events.off(channel(binId), listener);
+    publish: summary => events.emit('request', summary),
+    subscribe: listener => {
+        events.on('request', listener);
+        return () => events.off('request', listener);
     },
 };
