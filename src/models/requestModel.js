@@ -80,9 +80,13 @@ class RequestModel {
         return this.summary(Number(id));
     }
 
-    buildFilters({ binId, method, search, from, to } = {}) {
+    buildFilters({ ids, binId, method, search, from, to } = {}) {
         const clauses = [];
         const params = [];
+        if (ids && ids.length) {
+            clauses.push(`r.id IN (${ids.map(() => '?').join(', ')})`);
+            params.push(...ids);
+        }
         if (binId) {
             clauses.push('r.bin_id = ?');
             params.push(binId);
@@ -127,6 +131,18 @@ class RequestModel {
         return requests.length ? this.get(requests[0].id) : null;
     }
 
+    // Matching requests in full, oldest first: the newest `limit` of them, and whether there were more
+    async export(filters, limit) {
+        if (!Number.isInteger(limit)) throw new TypeError('limit must be an integer');
+        const { where, params } = this.buildFilters(filters);
+        const rows = await this.db.all(
+            `SELECT r.*, b.name AS bin_name FROM requests r LEFT JOIN bins b ON b.id = r.bin_id ${where}
+             ORDER BY r.id DESC LIMIT ${limit + 1}`,
+            params
+        );
+        return { truncated: rows.length > limit, requests: rows.slice(0, limit).reverse().map(toDetail) };
+    }
+
     async summary(id) {
         const [row] = await this.db.all(`SELECT ${SUMMARY_COLUMNS} FROM requests r LEFT JOIN bins b ON b.id = r.bin_id WHERE r.id = ?`, [id]);
         return row ? toSummary(row) : null;
@@ -156,3 +172,4 @@ class RequestModel {
 }
 
 module.exports = RequestModel;
+module.exports.bodyAsText = bodyAsText;

@@ -330,6 +330,7 @@ let pageSize = 25;
 let totalPages = 1;
 let selectedId = null;
 let selectedDetail = null;
+let totalMatching = 0;
 
 function currentFilters() {
     return {
@@ -343,25 +344,34 @@ function currentFilters() {
 
 const hasFilters = f => Boolean(f.method || f.searchInput || f.startDate || f.endDate || RANGES[timeRange]);
 
+// The filters as API query parameters (shared by the list and the export)
+function filterParams(f) {
+    const params = new URLSearchParams();
+    if (f.binId) params.set('bin', f.binId);
+    if (f.method) params.set('method', f.method);
+    if (f.searchInput) params.set('search', f.searchInput);
+    if (f.startDate) params.set('from', localDayToIso(f.startDate));
+    if (f.endDate) params.set('to', localDayToIso(f.endDate, true));
+    // Relative ranges are recalculated on every load, so the window keeps sliding
+    if (!f.startDate && !f.endDate && RANGES[timeRange]) {
+        params.set('from', new Date(Date.now() - RANGES[timeRange].ms).toISOString());
+    }
+    return params;
+}
+
 async function loadRequests(page = currentPage) {
     const f = currentFilters();
     saveSetting('rb_query_params', JSON.stringify({ ...f, page, pageSize, timeRange }));
     try {
-        const params = new URLSearchParams({ page, pageSize });
-        if (f.binId) params.set('bin', f.binId);
-        if (f.method) params.set('method', f.method);
-        if (f.searchInput) params.set('search', f.searchInput);
-        if (f.startDate) params.set('from', localDayToIso(f.startDate));
-        if (f.endDate) params.set('to', localDayToIso(f.endDate, true));
-        // Relative ranges are recalculated on every load, so the window keeps sliding
-        if (!f.startDate && !f.endDate && RANGES[timeRange]) {
-            params.set('from', new Date(Date.now() - RANGES[timeRange].ms).toISOString());
-        }
+        const params = filterParams(f);
+        params.set('page', page);
+        params.set('pageSize', pageSize);
         const { response, data } = await apiJson(`/api/requests?${params}`);
         if (!response.ok) throw new Error(data.error || response.statusText);
         requests = data.requests;
         currentPage = data.page;
         totalPages = data.totalPages;
+        totalMatching = data.total;
         $('requestInfo').textContent = `${data.total} ${hasFilters(f) || f.binId ? 'matching' : 'total'}`;
         if (!hasFilters(f) && !f.binId) $('navCount').textContent = data.total || '';
     } catch (error) {
@@ -707,6 +717,39 @@ function toggleSelectAll(checked) {
     updateSelectionInfo();
 }
 
+// --- Export ---
+
+function toggleExportMenu(open = $('exportMenu').classList.contains('hidden')) {
+    $('exportMenu').classList.toggle('hidden', !open);
+    $('exportButton').setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const ids = selectedIds();
+    $('exportMenuTitle').textContent = ids.length
+        ? `Export the ${ids.length} selected request${ids.length === 1 ? '' : 's'}`
+        : `Export ${totalMatching > 1000 ? 'the newest 1000 of ' : ''}${totalMatching} matching request${totalMatching === 1 ? '' : 's'}`;
+    $('exportMenu').querySelector('button').focus();
+}
+
+// Downloads the selected requests, or everything matching the filters
+async function exportRequests(format) {
+    toggleExportMenu(false);
+    const ids = selectedIds();
+    const params = ids.length ? new URLSearchParams({ ids: ids.join(',') }) : filterParams(currentFilters());
+    params.set('format', format);
+    try {
+        const response = await apiFetch(`/api/requests/export?${params}`);
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || response.statusText);
+        const name = /filename="([^"]+)"/.exec(response.headers.get('content-disposition') || '');
+        const link = el('a');
+        link.href = URL.createObjectURL(await response.blob());
+        link.download = name ? name[1] : `request-bin.${format}`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    } catch (error) {
+        alert(`Export failed: ${error.message}`);
+    }
+}
+
 async function deleteSelectedRequests() {
     const ids = selectedIds();
     if (ids.length === 0) return;
@@ -721,7 +764,12 @@ async function deleteSelectedRequests() {
 let editingBin = null; // the bin being edited, or null when creating
 
 function binResponseSummary(bin) {
-    return `${bin.responseStatus} · ${bin.responseContentType}`;
+    return [
+        bin.responseStatus,
+        bin.responseContentType,
+        ...(bin.responseTemplate ? ['templated'] : []),
+        ...(bin.responseDelayMs ? [`${bin.responseDelayMs} ms delay`] : []),
+    ].join(' · ');
 }
 
 function binRow(bin) {
@@ -790,6 +838,8 @@ function openBinForm(bin = null) {
     $('binStatusInput').value = bin ? bin.responseStatus : 200;
     $('binTypeInput').value = bin ? bin.responseContentType : 'application/json';
     $('binBodyInput').value = bin ? bin.responseBody : '{"ok":true}';
+    $('binTemplateInput').checked = bin ? bin.responseTemplate : false;
+    $('binDelayInput').value = bin ? bin.responseDelayMs : 0;
     $('binRedactInput').checked = bin ? bin.redactHeaders : true;
     $('binSecretInput').checked = false;
     // New bins: a checkbox. Existing bins: add / replace / remove buttons
@@ -835,6 +885,8 @@ async function saveBin(event) {
         responseStatus: Number($('binStatusInput').value),
         responseContentType: $('binTypeInput').value,
         responseBody: $('binBodyInput').value,
+        responseTemplate: $('binTemplateInput').checked,
+        responseDelayMs: Number($('binDelayInput').value) || 0,
         redactHeaders: $('binRedactInput').checked,
     };
     if (editingBin && !settings.name) {
@@ -1168,6 +1220,17 @@ window.addEventListener('DOMContentLoaded', () => {
     $('pageSizeSelect').addEventListener('change', changePageSize);
     $('selectAllCheckbox').addEventListener('change', event => toggleSelectAll(event.target.checked));
     $('deleteSelectedButton').addEventListener('click', deleteSelectedRequests);
+    $('exportButton').addEventListener('click', () => toggleExportMenu());
+    $('exportMenu').querySelectorAll('[data-format]').forEach(b => b.addEventListener('click', () => exportRequests(b.dataset.format)));
+    document.addEventListener('click', event => {
+        if (!event.target.closest('.menu-wrap')) toggleExportMenu(false);
+    });
+    $('exportMenu').addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+            toggleExportMenu(false);
+            $('exportButton').focus();
+        }
+    });
     $('copyUrlButton').addEventListener('click', event => {
         if (selectedDetail) copyText(captureUrl(selectedDetail.binId, selectedDetail.path, selectedDetail.queryString), event.target);
     });
@@ -1178,7 +1241,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (selectedDetail) copyText(selectedDetail.body, event.target);
     });
     document.addEventListener('keydown', event => {
-        if (currentView() !== 'requests' || event.target.matches('input, textarea, select')) return;
+        if (currentView() !== 'requests' || event.target.matches('input, textarea, select') || event.target.closest('.menu')) return;
         if (event.key === 'ArrowDown' || event.key === 'j') {
             event.preventDefault();
             moveSelection(1);

@@ -9,9 +9,11 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
 - **Bins**: each bin has its own capture URL, `/b/<bin id>`. Any method, any sub-path (`/b/<bin id>/webhooks/stripe?attempt=1`) and any content type is captured, up to `MAX_BODY_KB`.
   - Optional per-bin **secret**, sent as an `X-Bin-Secret` header or a `?secret=` parameter (stored as `[redacted]`). Requests without it get `401` and are not stored.
   - Configurable **response**: status code, content type and body, so senders that check the reply are satisfied.
+  - **Response templates**: the body can echo parts of the request, such as `{"received": "{{body.order.id}}", "attempt": {{query.attempt | 1}}}`. See [Response templates](#response-templates).
+  - **Response delay** of up to 30 seconds, to test sender timeouts and retries.
   - Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, …) are **redacted** before storing, on by default and switchable per bin.
 - **Dashboard** with a resizable sidebar and a live request list (server-sent events: new requests appear as they arrive):
-  - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; keyboard navigation (↑/↓ or j/k); a resizable detail pane with copy URL, **copy as cURL** and copy body.
+  - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; **export** the matching or selected requests as **HAR** (for browser dev tools, Postman, Insomnia) or JSON; keyboard navigation (↑/↓ or j/k); a resizable detail pane with copy URL, **copy as cURL** and copy body.
   - Bodies are shown according to their format, with a switch between views:
     - **JSON**: indented and colour-coded, or raw.
     - **Form** (`application/x-www-form-urlencoded`): a name/value table, or raw.
@@ -42,7 +44,7 @@ src/
   middleware/            auth.js (sessions, admin token, Read keys), validate.js
   models/                binModel.js, requestModel.js, apiKeyModel.js
   routes/                captureRoutes.js (/b), binRoutes.js, requestRoutes.js (+ SSE stream), apiKeyRoutes.js
-  utils/                 logger, session cookies, API key hashing and encryption
+  utils/                 logger, session cookies, API key hashing and encryption, response templates, HAR export
   views/                 dashboard (index.html, scripts.js, formatters.js, styles.css), sign-in page
 test/                    node:test suites (npm test)
 ```
@@ -243,13 +245,31 @@ curl -X POST "http://localhost:30002/b/3f9c2a7d1e4b8c06/orders?attempt=1" \
 
 The path is stored relative to the bin (`/orders` above). Once a bin holds `MAX_REQUESTS_PER_BIN` requests, the oldest are deleted.
 
+With a `responseDelayMs`, the bin waits that long before answering. The request is stored first, so it shows up in the dashboard straight away.
+
+#### Response templates
+
+With `responseTemplate` on, placeholders in the response body are filled in from the request. Without it, the body is sent exactly as written.
+
+| Placeholder | Value |
+|-------------|-------|
+| `{{method}}`, `{{path}}`, `{{ip}}` | Request method, path after the bin URL, sender IP |
+| `{{id}}`, `{{bin}}` | The captured request's id, the bin id |
+| `{{query}}`, `{{query.<name>}}` | The whole query string, or one parameter |
+| `{{header.<name>}}` | A request header, case-insensitive. Headers hidden by redaction stay `[redacted]` |
+| `{{body}}`, `{{body.<path>}}` | The whole body, or a field of a JSON body (`user.name`, `items.0.id`, `items[0].id`) or form body |
+| `{{now}}`, `{{timestamp}}`, `{{uuid}}` | Current ISO time, Unix time in milliseconds, a random UUID |
+| `{{<placeholder> \| <fallback>}}` | The fallback text when the value is missing or empty |
+
+Unknown placeholders and missing values without a fallback become empty. Values are escaped for the response content type: JSON string escaping for `application/json`, and HTML/XML entities for HTML and XML. In JSON responses, numbers, booleans, objects and arrays are inserted as JSON, so both `{"user": {{body.user}}}` and `{"name": "{{body.user.name}}"}` produce valid JSON.
+
 ### Bins: `/api/bins`
 
 | Method and path | Access | Description |
 |-----------------|--------|-------------|
 | `GET /api/bins` | Read | All bins, with `requestCount` and `lastRequestAt` |
 | `GET /api/bins/:id` | Read | One bin |
-| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB). Returns `{ bin, secret? }` |
+| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB), `responseTemplate` (true/false, default false), `responseDelayMs` (0–30000, default 0). Returns `{ bin, secret? }` |
 | `PATCH /api/bins/:id` | Admin | Change any of the settings above except `withSecret` |
 | `DELETE /api/bins/:id` | Admin | Delete the bin and its requests |
 | `POST /api/bins/:id/secret` | Admin | Set a new secret (replaces the old one). Returns `{ secret }` |
@@ -278,6 +298,19 @@ Returns `{ requests, total, page, totalPages }`.
 
 ```
 curl -H "Authorization: Bearer $READ_KEY" "http://localhost:30002/api/requests/latest?bin=3f9c2a7d1e4b8c06&method=POST"
+```
+
+`GET /api/requests/export` (Read) downloads matching requests in full, oldest first. It takes the same filters as the list, plus:
+
+| Query parameter | Description |
+|-----------------|-------------|
+| `format` | `har` (default) or `json` |
+| `ids` | Comma-separated request ids (up to 500), to export only those |
+
+At most the newest 1000 matches are exported. When there were more, the response has an `X-Export-Truncated: true` header. The HAR file is HAR 1.2. Only the request side of each entry is filled in, because the response the bin sent isn't stored, and binary bodies are base64 with `"encoding": "base64"`. The JSON file is `{ exportedAt, count, truncated, requests }`, with each request in the same shape as `GET /api/requests/:id`.
+
+```
+curl -H "Authorization: Bearer $READ_KEY" -o stripe.har "http://localhost:30002/api/requests/export?bin=3f9c2a7d1e4b8c06"
 ```
 
 `DELETE /api/requests/:id` and `DELETE /api/requests` with `{ "ids": [1, 2, 3] }` (Admin, up to 500 ids) delete requests.
@@ -384,8 +417,8 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 ## Roadmap
 
 - Forward or replay a captured request to another URL (with an allowlist, to avoid SSRF)
-- Response templating and delays per bin
-- Per-bin retention, export as HAR
+- Response rules per bin (different responses by method or path)
+- Per-bin retention
 - Multiple admin users
 
 ## Contributing

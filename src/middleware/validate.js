@@ -5,7 +5,9 @@ const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 const RESPONSE_CONTENT_TYPES = ['application/json', 'text/plain', 'application/xml', 'text/xml', 'text/html'];
 const MAX_PAGE_SIZE = 100;
 const MAX_BULK_DELETE = 500;
+const EXPORT_FORMATS = ['har', 'json'];
 const MAX_RESPONSE_BODY = 64 * 1024;
+const MAX_RESPONSE_DELAY_MS = 30 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function badRequest(res, details) {
@@ -91,6 +93,24 @@ function validateIdList(req, res, next) {
     next();
 }
 
+// Export options, on top of the list filters (validateRequestQuery runs first):
+//   format=har|json, ids=1,2,3 to export only those requests
+function validateExportQuery(req, res, next) {
+    const errors = {};
+    const format = typeof req.query.format === 'string' && req.query.format ? req.query.format.toLowerCase() : 'har';
+    if (!EXPORT_FORMATS.includes(format)) errors.format = `must be one of ${EXPORT_FORMATS.join(', ')}`;
+    let ids = [];
+    if (typeof req.query.ids === 'string' && req.query.ids.trim()) {
+        const parts = req.query.ids.split(',');
+        ids = parts.map(id => parseId(id.trim()));
+        if (parts.length > MAX_BULK_DELETE || ids.includes(null)) errors.ids = `must be a comma-separated list of up to ${MAX_BULK_DELETE} ids`;
+    }
+    if (Object.keys(errors).length) return badRequest(res, errors);
+    req.listQuery.filters.ids = [...new Set(ids)];
+    req.exportFormat = format;
+    next();
+}
+
 // Bin settings in a create/update body; returns { settings } or { errors }
 function parseBinSettings(body = {}) {
     const errors = {};
@@ -119,6 +139,15 @@ function parseBinSettings(body = {}) {
             errors.responseBody = `must be a string of at most ${MAX_RESPONSE_BODY} characters`;
         } else settings.responseBody = body.responseBody;
     }
+    if (body.responseTemplate !== undefined) {
+        if (typeof body.responseTemplate !== 'boolean') errors.responseTemplate = 'must be true or false';
+        else settings.responseTemplate = body.responseTemplate;
+    }
+    if (body.responseDelayMs !== undefined) {
+        if (!Number.isInteger(body.responseDelayMs) || body.responseDelayMs < 0 || body.responseDelayMs > MAX_RESPONSE_DELAY_MS) {
+            errors.responseDelayMs = `must be an integer between 0 and ${MAX_RESPONSE_DELAY_MS}`;
+        } else settings.responseDelayMs = body.responseDelayMs;
+    }
     return Object.keys(errors).length ? { errors } : { settings };
 }
 
@@ -129,6 +158,7 @@ module.exports = {
     validateRequestQuery,
     validateIdParam,
     validateIdList,
+    validateExportQuery,
     parseBinSettings,
     METHODS,
     RESPONSE_CONTENT_TYPES,

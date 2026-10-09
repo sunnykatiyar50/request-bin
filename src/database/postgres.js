@@ -29,9 +29,14 @@ async function connect() {
             response_status INTEGER NOT NULL DEFAULT 200,
             response_content_type VARCHAR(64) NOT NULL DEFAULT 'application/json',
             response_body TEXT NOT NULL DEFAULT '{"ok":true}',
+            response_template BOOLEAN NOT NULL DEFAULT FALSE,
+            response_delay_ms INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL
         )
     `);
+    // Columns added after the first release, for databases created before them
+    await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS response_template BOOLEAN NOT NULL DEFAULT FALSE');
+    await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS response_delay_ms INTEGER NOT NULL DEFAULT 0');
     await pool.query(`
         CREATE TABLE IF NOT EXISTS requests (
             id SERIAL PRIMARY KEY,
