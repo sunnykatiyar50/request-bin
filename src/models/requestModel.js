@@ -1,6 +1,7 @@
 const { toIso } = require('../utils/time');
 
 const utf8 = new TextDecoder('utf-8', { fatal: true });
+const MAX_STORED_RESPONSE = 256 * 1024; // rendered templates can outgrow the 64 KB template
 const MAX_SEARCH_TEXT = 256 * 1024; // body text kept for searching, per request
 
 // The body as text when it's valid UTF-8, otherwise null
@@ -46,6 +47,12 @@ function toDetail(row) {
         headers: JSON.parse(row.headers),
         query: [...new URLSearchParams(row.query_string)].map(([name, value]) => ({ name, value })),
         ...encodeBody(row.body),
+        response: row.response_status === null || row.response_status === undefined ? null : {
+            status: Number(row.response_status),
+            contentType: row.response_content_type || null,
+            body: row.response_body ?? '',
+            ruleName: row.rule_name || null,
+        },
     };
 }
 
@@ -78,6 +85,15 @@ class RequestModel {
             if (cutoff) await this.db.run('DELETE FROM requests WHERE bin_id = ? AND id <= ?', [binId, cutoff.id]);
         }
         return this.summary(Number(id));
+    }
+
+    // Records the response the bin sent for a captured request (the body as rendered, up to the
+    // size a response body can have)
+    async setResponse(id, { status, contentType, body, ruleName }) {
+        await this.db.run(
+            'UPDATE requests SET response_status = ?, response_content_type = ?, response_body = ?, rule_name = ? WHERE id = ?',
+            [status, contentType, String(body ?? '').slice(0, MAX_STORED_RESPONSE), ruleName || null, id]
+        );
     }
 
     buildFilters({ ids, binId, method, search, from, to } = {}) {

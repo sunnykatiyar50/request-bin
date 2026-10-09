@@ -10,6 +10,7 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
   - Optional per-bin **secret**, sent as an `X-Bin-Secret` header, an `Authorization: Bearer` token or a `?secret=` parameter (stored as `[redacted]`, even with header redaction off). Requests without it get `401` and are not stored.
   - Configurable **response**: status code, content type and body, so senders that check the reply are satisfied.
   - **Response templates**: the body can echo parts of the request, such as `{"received": "{{body.order.id}}", "attempt": {{query.attempt | 1}}}`. See [Response templates](#response-templates).
+  - **Sent response recorded**: each captured request keeps the status, content type and body the bin answered with (templates as rendered) and the name of the rule that chose it, shown in the request's detail pane.
   - **Response delay** of up to 30 seconds, to test sender timeouts and retries.
   - **Response rules**: different responses by method, path, header, query parameter or body field, so one bin can mock several endpoints. See [Response rules](#response-rules).
   - Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, …) are **redacted** before storing, on by default and switchable per bin.
@@ -326,7 +327,7 @@ Unknown placeholders and missing values without a fallback become empty. Values 
 
 Returns `{ requests, total, page, totalPages }`.
 
-`GET /api/requests/:id` (Read) returns one request in full: `method`, `path`, `queryString`, `query` (as `[{ name, value }]`), `headers`, `contentType`, `body`, `bodyEncoding` (`utf8`, or `base64` for binary bodies), `bodySize`, `ip` and `createdAt`.
+`GET /api/requests/:id` (Read) returns one request in full: `method`, `path`, `queryString`, `query` (as `[{ name, value }]`), `headers`, `contentType`, `body`, `bodyEncoding` (`utf8`, or `base64` for binary bodies), `bodySize`, `ip`, `createdAt` and `response` (what the bin sent back: `{ status, contentType, body, ruleName }`, or `null` for requests captured before responses were stored).
 
 `GET /api/requests/latest` (Read) takes the same filters as the list and returns the newest match in full, or `404`. For a test that triggers a webhook and then checks it:
 
@@ -341,7 +342,7 @@ curl -H "Authorization: Bearer $READ_KEY" "http://localhost:30002/api/requests/l
 | `format` | `har` (default) or `json` |
 | `ids` | Comma-separated request ids (up to 500), to export only those |
 
-At most the newest 1000 matches are exported. When there were more, the response has an `X-Export-Truncated: true` header. The HAR file is HAR 1.2. Only the request side of each entry is filled in, because the response the bin sent isn't stored, and binary bodies are base64 with `"encoding": "base64"`. The JSON file is `{ exportedAt, count, truncated, requests }`, with each request in the same shape as `GET /api/requests/:id`.
+At most the newest 1000 matches are exported. When there were more, the response has an `X-Export-Truncated: true` header. The HAR file is HAR 1.2. Each entry's response is the one the bin sent (status, content type and body; `status: 0` for requests captured before responses were stored), and binary request bodies are base64 with `"encoding": "base64"`. The JSON file is `{ exportedAt, count, truncated, requests }`, with each request in the same shape as `GET /api/requests/:id`.
 
 ```
 curl -H "Authorization: Bearer $READ_KEY" -o stripe.har "http://localhost:30002/api/requests/export?bin=3f9c2a7d1e4b8c06"

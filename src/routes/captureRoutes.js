@@ -93,6 +93,7 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
         const responseBody = response.template
             ? renderTemplate(response.body, requestInfo, response.contentType)
             : response.body;
+        await requestModel.setResponse(summary.id, { ...response, body: responseBody });
 
         // Simulates a slow endpoint. The request is already stored, so it shows up in the dashboard
         // straight away; a sender that gives up early just closes the connection.
