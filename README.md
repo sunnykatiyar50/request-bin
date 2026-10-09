@@ -103,6 +103,12 @@ To run the tests:
 npm test
 ```
 
+The tests use a temporary SQLite database. To run them against PostgreSQL or MySQL, set `TEST_DB_TYPE` and the usual connection variables. The tests empty the tables first, so the database name must contain `test`:
+```
+TEST_DB_TYPE=postgres PG_HOST=localhost PG_PORT=5432 PG_USER=requestbin PG_PASSWORD=... PG_DATABASE=requestbin_test npm run test:serial
+TEST_DB_TYPE=mysql MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=requestbin MYSQL_PASSWORD=... MYSQL_DATABASE=requestbin_test npm run test:serial
+```
+
 ## Authentication
 
 | Who | How | Can do |
@@ -198,13 +204,13 @@ If you put the service behind a reverse proxy (nginx, Traefik, Nginx Proxy Manag
 
 ### Publishing the image
 
-A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on Node 22 and 24, then builds and publishes the image:
+A GitHub Actions workflow (`.github/workflows/docker.yml`) runs the tests on SQLite (Node 22 and 24), PostgreSQL 17 and MySQL 8.4. It then builds the image and smoke-tests it (`.github/smoke-test.sh`): it starts a container, waits for the health check, creates a bin, sends a request into it and reads it back. Only after all of that does it build for amd64 and arm64 and publish:
 
 | Event | Tags |
 |-------|------|
 | Push to `main` | `latest`, `sha-<commit>` |
 | Push a tag such as `v2.1.0` | `2.1.0`, `2.1`, `2`, `sha-<commit>` |
-| Pull request | Builds the image to check it, but doesn't publish |
+| Pull request (to any branch) | Tests, builds and smoke-tests the image, but doesn't publish |
 
 To publish a versioned release:
 ```

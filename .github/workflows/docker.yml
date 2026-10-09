@@ -1,8 +1,9 @@
-# Tests the app, then builds the Docker image and publishes it to GitHub Container Registry.
+# Tests the app (SQLite on Node 22 and 24, plus PostgreSQL and MySQL), builds the Docker image,
+# smoke-tests it, and publishes it to GitHub Container Registry.
 #
 #   push to main          -> ghcr.io/<owner>/request-bin:latest and :sha-<short>
 #   push a tag v2.1.0     -> :2.1.0, :2.1, :2 and :sha-<short>
-#   pull request to main  -> tests and builds the image, but does not publish it
+#   pull request          -> tests, builds and smoke-tests the image, but does not publish it
 #   Actions tab "Run workflow" -> same as a push to the selected branch
 name: Docker image
 
@@ -11,7 +12,6 @@ on:
     branches: [main]
     tags: ['v*.*.*']
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 # A newer push to the same branch cancels the run still in progress
@@ -44,9 +44,66 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  # The same tests against database servers. Each run empties the tables first, so the files run
+  # one at a time (see test/helpers/database.js).
+  test-databases:
+    name: Test (PostgreSQL, MySQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: requestbin
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: requestbin_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U requestbin"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_USER: requestbin
+          MYSQL_PASSWORD: ci-password
+          MYSQL_DATABASE: requestbin_test
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u requestbin -pci-password"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: PostgreSQL
+        run: npm run test:serial
+        env:
+          TEST_DB_TYPE: postgres
+          PG_HOST: 127.0.0.1
+          PG_PORT: 5432
+          PG_USER: requestbin
+          PG_PASSWORD: ci-password
+          PG_DATABASE: requestbin_test
+
+      - name: MySQL
+        run: npm run test:serial
+        env:
+          TEST_DB_TYPE: mysql
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: requestbin
+          MYSQL_PASSWORD: ci-password
+          MYSQL_DATABASE: requestbin_test
+
   image:
     name: Build and publish image
-    needs: test
+    needs: [test, test-databases]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -57,6 +114,20 @@ jobs:
       # QEMU lets the amd64 runner build the arm64 image too (Raspberry Pi, Oracle Ampere, Apple silicon)
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
+
+      # Build the amd64 image into the local Docker engine and check that it actually works before
+      # anything is published. The multi-platform build below reuses these layers from the cache.
+      - name: Build image for the smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: request-bin:smoke-test
+          cache-from: type=gha
+
+      - name: Smoke test
+        run: sh .github/smoke-test.sh request-bin:smoke-test
 
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'

@@ -1,14 +1,9 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
 
-process.env.NODE_ENV = 'test';
-process.env.DB_TYPE = 'sqlite';
-process.env.SQLITE_PATH = ':memory:';
-process.env.LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-test-logs-'));
+const { setupTestEnv, openTestDatabase } = require('./helpers/database');
+setupTestEnv('api');
 
 const request = require('supertest');
 const { loadConfig } = require('../src/config');
@@ -46,7 +41,7 @@ async function latestIn(binId) {
 }
 
 before(async () => {
-    db = await initializeDatabase();
+    db = await openTestDatabase();
     const config = loadConfig(env);
     app = createApp({
         config,
@@ -132,29 +127,19 @@ describe('bins', () => {
     });
 
     test('adds the template and delay columns to a database created before them', async () => {
-        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-migrate-'));
-        const file = path.join(dir, 'old.sqlite');
-        const { DatabaseSync } = require('node:sqlite');
-        const old = new DatabaseSync(file);
-        old.exec(`CREATE TABLE bins (id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_hash TEXT, secret_encrypted TEXT,
-                  redact_headers INTEGER NOT NULL DEFAULT 1, response_status INTEGER NOT NULL DEFAULT 200,
-                  response_content_type TEXT NOT NULL DEFAULT 'application/json', response_body TEXT NOT NULL DEFAULT '{"ok":true}',
-                  created_at TEXT NOT NULL);
-                  INSERT INTO bins (id, name, created_at) VALUES ('00000000000000aa', 'Old', '2026-01-01T00:00:00.000Z');`);
-        old.close();
-
-        const previous = process.env.SQLITE_PATH;
-        process.env.SQLITE_PATH = file;
-        const migrated = await initializeDatabase();
-        process.env.SQLITE_PATH = previous;
+        const { bin } = await createBin({ responseTemplate: true, responseDelayMs: 50 });
+        // Back to the earlier schema, then connect again as a newer version starting up would
+        for (const column of ['response_template', 'response_delay_ms']) await db.run(`ALTER TABLE bins DROP COLUMN ${column}`);
+        const upgraded = await initializeDatabase();
         try {
-            const bin = await new BinModel(migrated, { encryptionSecret: 'x'.repeat(48) }).get('00000000000000aa');
-            assert.equal(bin.responseTemplate, false);
-            assert.equal(bin.responseDelayMs, 0);
+            const after = await new BinModel(upgraded, { encryptionSecret: 'x'.repeat(48) }).get(bin.id);
+            assert.equal(after.responseTemplate, false);
+            assert.equal(after.responseDelayMs, 0);
         } finally {
-            await migrated.close();
-            fs.rmSync(dir, { recursive: true, force: true });
+            await upgraded.close();
         }
+        // Connecting again finds the columns already there
+        await (await initializeDatabase()).close();
     });
 });
 

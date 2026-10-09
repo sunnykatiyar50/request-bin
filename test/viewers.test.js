@@ -1,17 +1,11 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
 
-process.env.NODE_ENV = 'test';
-process.env.DB_TYPE = 'sqlite';
-process.env.SQLITE_PATH = ':memory:';
-process.env.LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-viewers-logs-'));
+const { setupTestEnv, openTestDatabase } = require('./helpers/database');
+setupTestEnv('viewers');
 
 const request = require('supertest');
 const { loadConfig } = require('../src/config');
-const initializeDatabase = require('../src/database/initDatabase');
 const BinModel = require('../src/models/binModel');
 const RequestModel = require('../src/models/requestModel');
 const ApiKeyModel = require('../src/models/apiKeyModel');
@@ -44,7 +38,7 @@ async function login(target, username, password) {
 }
 
 before(async () => {
-    db = await initializeDatabase();
+    db = await openTestDatabase();
     app = build();
     // A bin with a captured request to look at
     const { cookie } = await login(app, 'admin', env.ADMIN_PASSWORD);
