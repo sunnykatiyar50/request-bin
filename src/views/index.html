@@ -236,7 +236,7 @@
                         <textarea id="binBodyInput" rows="3">{"ok":true}</textarea>
                     </div>
                     <div class="field-wide bin-response-options">
-                        <label class="check-label"><input type="checkbox" id="binTemplateInput" /> Fill in <code>{{placeholders}}</code> from the request</label>
+                        <label class="check-label"><input type="checkbox" id="binTemplateInput" /> <span>Fill in <code>{{placeholders}}</code> from the request</span></label>
                         <label class="delay-field" for="binDelayInput">Delay
                             <input type="number" id="binDelayInput" min="0" max="30000" step="100" value="0" /> ms</label>
                     </div>
@@ -255,7 +255,7 @@
                     </details>
                 </div>
                 <label class="check-label"><input type="checkbox" id="binRedactInput" checked /> Hide sensitive headers (Authorization, Cookie, X-API-Key…) when storing requests</label>
-                <label id="binSecretField" class="check-label"><input type="checkbox" id="binSecretInput" /> Require a secret (<code>X-Bin-Secret</code> header or <code>?secret=</code>)</label>
+                <label id="binSecretField" class="check-label"><input type="checkbox" id="binSecretInput" /> <span>Require a secret (<code>X-Bin-Secret</code>, <code>Bearer</code> or <code>?secret=</code>)</span></label>
                 <div id="binSecretManage" class="secret-manage hidden">
                     <span id="binSecretStatus" class="muted"></span>
                     <button type="button" id="binSecretAdd" class="ghost small">Add secret</button>
@@ -422,7 +422,7 @@
 
                     <h4>Rules</h4>
                     <table class="ref-table">
-                        <tr><th>Secret</th><td>Bins that require a secret need it in the <code>X-Bin-Secret</code> header or a <code>?secret=</code> query parameter, otherwise <code>401</code>. A <code>?secret=</code> value is stored as <code>[redacted]</code>.</td></tr>
+                        <tr><th>Secret</th><td>Bins that require a secret need it in the <code>X-Bin-Secret</code> header, as <code>Authorization: Bearer &lt;secret&gt;</code>, or in a <code>?secret=</code> query parameter, otherwise <code>401</code>. Whichever one carried the secret is stored as <code>[redacted]</code>.</td></tr>
                         <tr><th>Size</th><td>Bodies over <code>MAX_BODY_KB</code> get <code>413</code>.</td></tr>
                         <tr><th>History</th><td>Each bin keeps its newest <code>MAX_REQUESTS_PER_BIN</code> requests; older ones are dropped.</td></tr>
                         <tr><th>Headers</th><td>In bins with redaction on, <code>Authorization</code>, <code>Cookie</code>, <code>X-API-Key</code>… are stored as <code>[redacted]</code>.</td></tr>

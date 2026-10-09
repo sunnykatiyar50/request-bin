@@ -4,6 +4,7 @@ const { isBinId } = require('../middleware/validate');
 const { publish } = require('../events');
 const { renderTemplate } = require('../utils/template');
 const { bodyAsText } = require('../models/requestModel');
+const { parseBearer } = require('../utils/session');
 
 const REDACTED = '[redacted]';
 
@@ -27,10 +28,20 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
         if (!bin) return res.status(404).json({ error: 'Bin not found' });
 
         const url = new URL(req.originalUrl, 'http://placeholder');
+        // Headers that carried the bin secret, redacted before storing even in bins with redaction off
+        req.secretHeaders = [];
         if (bin.secret_hash) {
-            // Header for senders that can set one, ?secret= for those that can't
-            const presented = req.get('x-bin-secret') || url.searchParams.get('secret') || '';
-            if (!binModel.checkSecret(bin, presented)) return res.status(401).json({ error: 'Invalid bin secret' });
+            // X-Bin-Secret or Authorization: Bearer for senders that can set a header, ?secret= for
+            // those that can't. Any one of them will do: a sender may use Authorization for its own
+            // token and send the secret in X-Bin-Secret.
+            const presented = [
+                ['x-bin-secret', req.get('x-bin-secret')],
+                ['authorization', parseBearer(req.get('authorization'))],
+                [null, url.searchParams.get('secret')],
+            ];
+            const match = presented.find(([, value]) => value && binModel.checkSecret(bin, value));
+            if (!match) return res.status(401).json({ error: 'Invalid bin secret' });
+            if (match[0]) req.secretHeaders.push(match[0]);
         }
         if (url.searchParams.has('secret')) url.searchParams.set('secret', REDACTED);
 
@@ -51,6 +62,7 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
         if (Number(bin.redact_headers)) {
             for (const name of config.redactHeaders) if (name in headers) headers[name] = REDACTED;
         }
+        for (const name of req.secretHeaders) headers[name] = REDACTED;
         const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
 
         const summary = await requestModel.insert(bin.id, {

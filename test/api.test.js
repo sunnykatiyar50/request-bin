@@ -335,6 +335,26 @@ describe('bin secrets', () => {
         assert.deepEqual(detail.query, [{ name: 'secret', value: '[redacted]' }, { name: 'a', value: '1' }]);
     });
 
+    test('accepted as a Bearer token, which is always redacted', async () => {
+        const { bin, secret } = await createBin({ withSecret: true, redactHeaders: false });
+        assert.equal((await request(app).post(`/b/${bin.id}`).set('Authorization', 'Bearer wrong')).status, 401);
+        assert.equal((await request(app).post(`/b/${bin.id}`).set('Authorization', `Basic ${secret}`)).status, 401);
+        assert.equal((await request(app).post(`/b/${bin.id}`).set('Authorization', `bearer \t ${secret} `)).status, 200);
+        assert.equal((await latestIn(bin.id)).headers.authorization, '[redacted]');
+    });
+
+    test('any one of the header, Bearer token or ?secret= will do', async () => {
+        const { bin, secret } = await createBin({ withSecret: true, redactHeaders: false });
+        // The sender's own token in Authorization, the bin secret in X-Bin-Secret
+        const res = await request(app).post(`/b/${bin.id}?secret=wrong`)
+            .set('Authorization', 'Bearer sender-token').set('X-Bin-Secret', secret);
+        assert.equal(res.status, 200);
+        const detail = await latestIn(bin.id);
+        assert.equal(detail.headers.authorization, 'Bearer sender-token');
+        assert.equal(detail.headers['x-bin-secret'], '[redacted]');
+        assert.deepEqual(detail.query, [{ name: 'secret', value: '[redacted]' }]);
+    });
+
     test('can be shown again, rotated and removed', async () => {
         const { bin, secret } = await createBin({ withSecret: true });
         const shown = await admin(request(app).post(`/api/bins/${bin.id}/secret/reveal`));
@@ -359,6 +379,15 @@ describe('bin secrets', () => {
 });
 
 describe('reading requests', () => {
+    test('accepts ADMIN_TOKEN with any Bearer spacing and case', async () => {
+        for (const header of [`bearer ${ADMIN_TOKEN}`, `BEARER  ${ADMIN_TOKEN}`, `Bearer\t${ADMIN_TOKEN} `]) {
+            assert.equal((await request(app).get('/api/bins').set('Authorization', header)).status, 200, header);
+        }
+        for (const header of [`Bearer${ADMIN_TOKEN}`, `Bearer ${ADMIN_TOKEN} extra`, `Token ${ADMIN_TOKEN}`]) {
+            assert.equal((await request(app).get('/api/bins').set('Authorization', header)).status, 401, header);
+        }
+    });
+
     test('needs authentication', async () => {
         assert.equal((await request(app).get('/api/requests')).status, 401);
         assert.equal((await request(app).get('/api/requests/latest')).status, 401);

@@ -7,7 +7,7 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
 ## Features
 
 - **Bins**: each bin has its own capture URL, `/b/<bin id>`. Any method, any sub-path (`/b/<bin id>/webhooks/stripe?attempt=1`) and any content type is captured, up to `MAX_BODY_KB`.
-  - Optional per-bin **secret**, sent as an `X-Bin-Secret` header or a `?secret=` parameter (stored as `[redacted]`). Requests without it get `401` and are not stored.
+  - Optional per-bin **secret**, sent as an `X-Bin-Secret` header, an `Authorization: Bearer` token or a `?secret=` parameter (stored as `[redacted]`, even with header redaction off). Requests without it get `401` and are not stored.
   - Configurable **response**: status code, content type and body, so senders that check the reply are satisfied.
   - **Response templates**: the body can echo parts of the request, such as `{"received": "{{body.order.id}}", "attempt": {{query.attempt | 1}}}`. See [Response templates](#response-templates).
   - **Response delay** of up to 30 seconds, to test sender timeouts and retries.
@@ -113,7 +113,7 @@ TEST_DB_TYPE=mysql MYSQL_HOST=127.0.0.1 MYSQL_PORT=3306 MYSQL_USER=requestbin MY
 
 | Who | How | Can do |
 |-----|-----|--------|
-| Anything sending requests to a bin | Nothing, or the bin's secret (`X-Bin-Secret` header or `?secret=`) if it has one | `ANY /b/<bin id>/…` only |
+| Anything sending requests to a bin | Nothing, or the bin's secret (`X-Bin-Secret` header, `Authorization: Bearer` or `?secret=`) if it has one | `ANY /b/<bin id>/…` only |
 | Tests reading captured requests | `Authorization: Bearer <key>` (or `X-API-Key`) with a **Read** key | List bins, list and read requests, live stream |
 | Scripts needing full access | `Authorization: Bearer <ADMIN_TOKEN>` from `.env` | Everything |
 | Dashboard admin | Sign in with `ADMIN_USERNAME` and `ADMIN_PASSWORD` (sets an HttpOnly session cookie) | Everything |
@@ -244,7 +244,7 @@ curl -X POST "http://localhost:30002/b/3f9c2a7d1e4b8c06/orders?attempt=1" \
 | Response | When |
 |----------|------|
 | The bin's status and body | Captured |
-| `401` | The bin has a secret and the request didn't include it (`X-Bin-Secret` header or `?secret=`) |
+| `401` | The bin has a secret and the request didn't include it (`X-Bin-Secret` header, `Authorization: Bearer` or `?secret=`) |
 | `404` | No such bin |
 | `413` | Body larger than `MAX_BODY_KB` |
 | `429` | More than `CAPTURE_RATE_LIMIT` requests per minute from this IP |
@@ -409,7 +409,7 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 
 - **The server exits with `Invalid auth configuration`:** one of the required auth settings is missing, too short, or still a `change-me` placeholder. The message lists what to fix.
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
-- **A sender gets `401 Invalid bin secret`:** the bin has a secret and the request didn't include it. Add an `X-Bin-Secret` header, or `?secret=<secret>` to the URL for senders that can't set headers. The secret can be shown on the **Bins** page.
+- **A sender gets `401 Invalid bin secret`:** the bin has a secret and the request didn't include it. Add an `X-Bin-Secret` header or `Authorization: Bearer <secret>`, or `?secret=<secret>` to the URL for senders that can't set headers. If the sender uses `Authorization` for its own token, send the secret in `X-Bin-Secret`; any one of the three is enough. The secret can be shown on the **Bins** page.
 - **A sender gets `413`:** the body is larger than `MAX_BODY_KB`.
 - **Requests don't appear live behind a reverse proxy:** the live list uses server-sent events (`/api/stream`). Turn off response buffering for that path (nginx: `proxy_buffering off;`; the app already sends `X-Accel-Buffering: no`) and allow long-lived connections. The list still refreshes when you reload or change filters.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`. Without it, captured requests also show the proxy's IP instead of the sender's.
