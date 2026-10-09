@@ -28,6 +28,7 @@ async function connect() {
             response_body TEXT NOT NULL,
             response_template TINYINT(1) NOT NULL DEFAULT 0,
             response_delay_ms INT NOT NULL DEFAULT 0,
+            response_rules TEXT,
             created_at DATETIME(3) NOT NULL
         ) DEFAULT CHARSET = utf8mb4
     `);
@@ -40,6 +41,7 @@ async function connect() {
     for (const [name, definition] of [
         ['response_template', 'TINYINT(1) NOT NULL DEFAULT 0'],
         ['response_delay_ms', 'INT NOT NULL DEFAULT 0'],
+        ['response_rules', 'TEXT'],
     ]) {
         if (!existing.includes(name)) await pool.query(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
     }

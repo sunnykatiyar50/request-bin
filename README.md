@@ -11,6 +11,7 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
   - Configurable **response**: status code, content type and body, so senders that check the reply are satisfied.
   - **Response templates**: the body can echo parts of the request, such as `{"received": "{{body.order.id}}", "attempt": {{query.attempt | 1}}}`. See [Response templates](#response-templates).
   - **Response delay** of up to 30 seconds, to test sender timeouts and retries.
+  - **Response rules**: different responses by method, path, header, query parameter or body field, so one bin can mock several endpoints. See [Response rules](#response-rules).
   - Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, …) are **redacted** before storing, on by default and switchable per bin.
 - **Dashboard** with a resizable sidebar and a live request list (server-sent events: new requests appear as they arrive):
   - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; **export** the matching or selected requests as **HAR** (for browser dev tools, Postman, Insomnia) or JSON; keyboard navigation (↑/↓ or j/k); a resizable detail pane with copy URL, **copy as cURL** and copy body.
@@ -253,6 +254,33 @@ The path is stored relative to the bin (`/orders` above). Once a bin holds `MAX_
 
 With a `responseDelayMs`, the bin waits that long before answering. The request is stored first, so it shows up in the dashboard straight away.
 
+#### Response rules
+
+A bin can hold up to 20 rules, checked in order. The first rule whose conditions **all** match decides the response; a request that matches none gets the bin's own response. A rule only needs to set what differs: `status`, `contentType`, `body`, `template` and `delayMs` that it leaves out come from the bin.
+
+```
+{
+  "responseRules": [
+    { "name": "paid invoice",
+      "match": { "method": "POST", "path": "/stripe/*", "body": { "path": "type", "value": "invoice.*" } },
+      "response": { "status": 201, "body": "{\"received\": \"{{body.id}}\"}", "template": true } },
+    { "name": "maintenance",
+      "match": { "header": { "name": "X-Mode", "value": "maintenance" } },
+      "response": { "status": 503, "contentType": "text/plain", "body": "back soon" } }
+  ]
+}
+```
+
+| Condition | Matches |
+|-----------|---------|
+| `method` | The request method |
+| `path` | The path after the bin URL (`/orders/42`) |
+| `header` | `{ "name", "value"? }`: a request header (name is case-insensitive) |
+| `query` | `{ "name", "value"? }`: a query parameter |
+| `body` | `{ "path", "value"? }`: a field of a JSON or form body (`order.id`, `items[0].sku`) |
+
+`path` and every `value` match the whole text and are case-sensitive, and `*` stands for any text (`/orders/*`, `invoice.*`). Without a `value`, a `header`, `query` or `body` condition only requires the field to be present. A rule needs at least one condition. Rules are set on the **Bins** page ("Response rules") or with `responseRules` in the bin API; an empty list removes them.
+
 #### Response templates
 
 With `responseTemplate` on, placeholders in the response body are filled in from the request. Without it, the body is sent exactly as written.
@@ -275,7 +303,7 @@ Unknown placeholders and missing values without a fallback become empty. Values 
 |-----------------|--------|-------------|
 | `GET /api/bins` | Read | All bins, with `requestCount` and `lastRequestAt` |
 | `GET /api/bins/:id` | Read | One bin |
-| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB), `responseTemplate` (true/false, default false), `responseDelayMs` (0–30000, default 0). Returns `{ bin, secret? }` |
+| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB), `responseTemplate` (true/false, default false), `responseDelayMs` (0–30000, default 0), `responseRules` (up to 20, see [Response rules](#response-rules)). Returns `{ bin, secret? }` |
 | `PATCH /api/bins/:id` | Admin | Change any of the settings above except `withSecret` |
 | `DELETE /api/bins/:id` | Admin | Delete the bin and its requests |
 | `POST /api/bins/:id/secret` | Admin | Set a new secret (replaces the old one). Returns `{ secret }` |
@@ -423,7 +451,6 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 ## Roadmap
 
 - Forward or replay a captured request to another URL (with an allowlist, to avoid SSRF)
-- Response rules per bin (different responses by method or path)
 - Per-bin retention
 - Multiple admin users
 

@@ -253,6 +253,12 @@
                         </table>
                         <p class="hint">Values are escaped for the response type (JSON strings, HTML/XML entities). In JSON, numbers and objects are inserted as JSON: <code>{"user": {{body.user}}}</code>.</p>
                     </details>
+                    <details class="field-wide rules-editor" id="binRulesDetails">
+                        <summary id="binRulesSummary">Response rules</summary>
+                        <p class="hint">Rules are checked from the top. The first rule whose conditions all match decides the response; any other request gets the response above. Use <code>*</code> as a wildcard in paths and values. A header, query or body condition without a value only needs the field to be present.</p>
+                        <div id="binRules" class="rules-list"></div>
+                        <button type="button" id="addRuleButton" class="ghost small">Add rule</button>
+                    </details>
                 </div>
                 <label class="check-label"><input type="checkbox" id="binRedactInput" checked /> Hide sensitive headers (Authorization, Cookie, X-API-Key…) when storing requests</label>
                 <label id="binSecretField" class="check-label"><input type="checkbox" id="binSecretInput" /> <span>Require a secret (<code>X-Bin-Secret</code>, <code>Bearer</code> or <code>?secret=</code>)</span></label>

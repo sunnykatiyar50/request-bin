@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { toIso } = require('../utils/time');
 const { hashApiKey, createKeyCipher } = require('../utils/apiKeys');
 const { safeEqual } = require('../utils/session');
+const { parseStoredRules } = require('../utils/rules');
 
 const SETTINGS = {
     name: 'name',
@@ -11,7 +12,11 @@ const SETTINGS = {
     responseBody: 'response_body',
     responseTemplate: 'response_template',
     responseDelayMs: 'response_delay_ms',
+    responseRules: 'response_rules',
 };
+
+// Rules are stored as JSON text; no rules is NULL
+const serializeRules = rules => (Array.isArray(rules) && rules.length ? JSON.stringify(rules) : null);
 
 function toBin(row) {
     if (!row) return null;
@@ -25,6 +30,7 @@ function toBin(row) {
         responseBody: row.response_body,
         responseTemplate: Boolean(Number(row.response_template)),
         responseDelayMs: Number(row.response_delay_ms),
+        responseRules: parseStoredRules(row.response_rules),
         createdAt: toIso(row.created_at),
         ...(row.request_count !== undefined && { requestCount: Number(row.request_count) }),
         ...(row.last_request_at !== undefined && { lastRequestAt: toIso(row.last_request_at) }),
@@ -32,7 +38,7 @@ function toBin(row) {
 }
 
 // Bins: each has its own capture URL (/b/<id>/...), a configurable response (optionally templated
-// and delayed), an optional secret and header redaction. The secret is stored like API keys: a hash to check requests, and an
+// and delayed, with per-request rules), an optional secret and header redaction. The secret is stored like API keys: a hash to check requests, and an
 // encrypted copy (key derived from SESSION_SECRET) so the dashboard can show it again.
 class BinModel {
     constructor(db, { encryptionSecret } = {}) {
@@ -50,8 +56,8 @@ class BinModel {
         const secret = withSecret ? BinModel.newSecret() : null;
         await this.db.run(
             `INSERT INTO bins (id, name, secret_hash, secret_encrypted, redact_headers, response_status,
-                               response_content_type, response_body, response_template, response_delay_ms, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               response_content_type, response_body, response_template, response_delay_ms, response_rules, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 name || `Bin ${id.slice(0, 6)}`,
@@ -63,6 +69,7 @@ class BinModel {
                 settings.responseBody ?? '{"ok":true}',
                 settings.responseTemplate ?? false,
                 settings.responseDelayMs ?? 0,
+                serializeRules(settings.responseRules),
                 new Date(),
             ]
         );
@@ -103,7 +110,7 @@ class BinModel {
         for (const [key, column] of Object.entries(SETTINGS)) {
             if (settings[key] === undefined) continue;
             sets.push(`${column} = ?`);
-            params.push(settings[key]);
+            params.push(key === 'responseRules' ? serializeRules(settings[key]) : settings[key]);
         }
         if (sets.length) await this.db.run(`UPDATE bins SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
         return this.get(id);

@@ -29,6 +29,7 @@ async function connect() {
             response_body TEXT NOT NULL DEFAULT '{"ok":true}',
             response_template INTEGER NOT NULL DEFAULT 0,
             response_delay_ms INTEGER NOT NULL DEFAULT 0,
+            response_rules TEXT,
             created_at TEXT NOT NULL
         );
 
@@ -68,6 +69,7 @@ async function connect() {
     for (const [name, definition] of [
         ['response_template', 'INTEGER NOT NULL DEFAULT 0'],
         ['response_delay_ms', 'INTEGER NOT NULL DEFAULT 0'],
+        ['response_rules', 'TEXT'],
     ]) {
         if (!binColumns.includes(name)) db.exec(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
     }
