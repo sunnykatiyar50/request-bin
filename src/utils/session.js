@@ -47,4 +47,11 @@ function parseCookies(header = '') {
     return cookies;
 }
 
-module.exports = { createSessionToken, verifySessionToken, safeEqual, parseCookies };
+// The token from an "Authorization: Bearer <token>" header, or '' if there isn't one.
+// The scheme is case-insensitive and may be followed by any spaces or tabs (RFC 9110).
+function parseBearer(header = '') {
+    const match = /^Bearer[ \t]+(\S+)[ \t]*$/i.exec(header);
+    return match ? match[1] : '';
+}
+
+module.exports = { createSessionToken, verifySessionToken, safeEqual, parseCookies, parseBearer };

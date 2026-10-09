@@ -88,6 +88,11 @@ describe('using a Read key', () => {
         assert.equal((await request(app).get('/api/requests').set('X-API-Key', readKey)).status, 200);
     });
 
+    test('is accepted with any Bearer spacing and case', async () => {
+        const res = await request(app).get('/api/bins').set('Authorization', `bearer  ${readKey}`);
+        assert.equal(res.status, 200);
+    });
+
     test('cannot change anything or manage keys', async () => {
         assert.equal((await asKey(request(app).post('/api/bins')).send({})).status, 401);
         assert.equal((await asKey(request(app).delete(`/api/bins/${bin.id}`))).status, 401);

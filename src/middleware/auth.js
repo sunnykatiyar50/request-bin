@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { createSessionToken, verifySessionToken, safeEqual, parseCookies } = require('../utils/session');
+const { createSessionToken, verifySessionToken, safeEqual, parseCookies, parseBearer } = require('../utils/session');
 const { logToFile } = require('../utils/logger');
 
 const SESSION_COOKIE = 'rb_session';
@@ -23,10 +23,7 @@ function createAuth(config, { apiKeyModel } = {}) {
     const passwordFingerprint = password =>
         crypto.createHmac('sha256', config.sessionSecret).update(`password:${password}`).digest('base64url').slice(0, 22);
 
-    const bearerToken = req => {
-        const header = req.get('authorization') || '';
-        return header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    };
+    const bearerToken = req => parseBearer(req.get('authorization'));
 
     // The signed-in dashboard account, if the session cookie is valid and still matches .env:
     // the account must still exist with the same role and password.
