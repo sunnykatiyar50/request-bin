@@ -52,9 +52,18 @@ async function connect() {
             body_text TEXT,
             body_size INTEGER NOT NULL,
             ip VARCHAR(64),
-            created_at TIMESTAMPTZ NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            response_status INTEGER,
+            response_content_type VARCHAR(64),
+            response_body TEXT,
+            rule_name VARCHAR(100)
         )
     `);
+    // Columns added after the first release, for databases created before them
+    await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_status INTEGER');
+    await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_content_type VARCHAR(64)');
+    await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_body TEXT');
+    await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS rule_name VARCHAR(100)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_requests_bin ON requests (bin_id, id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_requests_created ON requests (created_at)');
     await pool.query(`

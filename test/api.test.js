@@ -363,6 +363,71 @@ describe('response rules', () => {
     });
 });
 
+describe('stored responses', () => {
+    test('the response sent is stored with the request', async () => {
+        const { bin } = await createBin({ responseStatus: 202, responseContentType: 'text/plain', responseBody: 'accepted' });
+        await request(app).post(`/b/${bin.id}`).send('x');
+        const detail = await latestIn(bin.id);
+        assert.deepEqual(detail.response, { status: 202, contentType: 'text/plain', body: 'accepted', ruleName: null });
+    });
+
+    test('a template is stored as rendered, and a matching rule is named', async () => {
+        const { bin } = await createBin({
+            responseTemplate: true,
+            responseBody: '{"id": {{id}}, "who": "{{body.name}}"}',
+            responseRules: [{ name: 'gone', match: { path: '/gone' }, response: { status: 410, body: 'gone: {{path}}', contentType: 'text/plain', template: true } }],
+        });
+        const sent = await request(app).post(`/b/${bin.id}`).set('Content-Type', 'application/json').send('{"name":"Ada"}');
+        const detail = await latestIn(bin.id);
+        assert.equal(detail.response.body, sent.text);
+        assert.equal(detail.response.body, `{"id": ${detail.id}, "who": "Ada"}`);
+
+        await request(app).get(`/b/${bin.id}/gone`);
+        const gone = await latestIn(bin.id);
+        assert.deepEqual(gone.response, { status: 410, contentType: 'text/plain', body: 'gone: /gone', ruleName: 'gone' });
+    });
+
+    test('is recorded even when the sender hangs up during a delay', async () => {
+        const { bin } = await createBin({ responseDelayMs: 300 });
+        const pending = request(app).get(`/b/${bin.id}/slow`).then(res => res);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal((await latestIn(bin.id)).response.status, 200);
+        await pending;
+    });
+
+    test('appears in the JSON export and in the HAR entry with the rule name', async () => {
+        const { bin } = await createBin({ responseRules: [{ name: 'teapot', match: { method: 'GET' }, response: { status: 418, body: 'short and stout', contentType: 'text/plain' } }] });
+        await request(app).get(`/b/${bin.id}`);
+        const json = await admin(request(app).get(`/api/requests/export?bin=${bin.id}&format=json`));
+        assert.equal(json.body.requests[0].response.status, 418);
+        const har = await admin(request(app).get(`/api/requests/export?bin=${bin.id}`));
+        const [entry] = har.body.log.entries;
+        assert.equal(entry.response.status, 418);
+        assert.equal(entry.response.statusText, "I'm a Teapot");
+        assert.equal(entry.response.content.text, 'short and stout');
+        assert.equal(entry.response.bodySize, 15);
+        assert.deepEqual(entry.response.headers, [{ name: 'Content-Type', value: 'text/plain' }]);
+        assert.match(entry.comment, /rule "teapot"/);
+    });
+
+    test('requests captured before responses were stored have none', async () => {
+        const { bin } = await createBin();
+        await request(app).get(`/b/${bin.id}`);
+        const { id } = await latestIn(bin.id);
+        await db.run('UPDATE requests SET response_status = NULL, response_content_type = NULL, response_body = NULL, rule_name = NULL WHERE id = ?', [id]);
+        assert.equal((await latestIn(bin.id)).response, null);
+        const har = await admin(request(app).get(`/api/requests/export?bin=${bin.id}`));
+        assert.equal(har.body.log.entries[0].response.status, 0);
+    });
+
+    test('are not stored for requests the bin rejects', async () => {
+        const { bin } = await createBin({ withSecret: true });
+        assert.equal((await request(app).get(`/b/${bin.id}`)).status, 401);
+        const list = await admin(request(app).get(`/api/requests?bin=${bin.id}`));
+        assert.equal(list.body.total, 0);
+    });
+});
+
 describe('export', () => {
     test('needs authentication', async () => {
         assert.equal((await request(app).get('/api/requests/export')).status, 401);
@@ -392,7 +457,10 @@ describe('export', () => {
         assert.equal(second.request.url.endsWith(`/b/${bin.id}`), true);
         assert.deepEqual(second.request.postData, { mimeType: 'application/octet-stream', text: 'AP8B', encoding: 'base64' });
         assert.equal(third.request.postData, undefined);
-        assert.equal(third.response.status, 0);
+        assert.equal(third.response.status, 200);
+        assert.equal(third.response.statusText, 'OK');
+        assert.equal(third.response.content.text, '{"ok":true}');
+        assert.equal(third.response.content.mimeType, 'application/json');
     });
 
     test('exports selected requests as JSON', async () => {

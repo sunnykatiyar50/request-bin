@@ -59,10 +59,26 @@ async function connect() {
             body_size INT NOT NULL,
             ip VARCHAR(64),
             created_at DATETIME(3) NOT NULL,
+            response_status INT,
+            response_content_type VARCHAR(64),
+            response_body MEDIUMTEXT,
+            rule_name VARCHAR(100),
             INDEX idx_requests_bin (bin_id, id),
             INDEX idx_requests_created (created_at)
         ) DEFAULT CHARSET = utf8mb4
     `);
+    const [requestColumns] = await pool.query(
+        "SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'requests'"
+    );
+    const existingRequestColumns = requestColumns.map(c => c.name);
+    for (const [name, definition] of [
+        ['response_status', 'INT'],
+        ['response_content_type', 'VARCHAR(64)'],
+        ['response_body', 'MEDIUMTEXT'],
+        ['rule_name', 'VARCHAR(100)'],
+    ]) {
+        if (!existingRequestColumns.includes(name)) await pool.query(`ALTER TABLE requests ADD COLUMN ${name} ${definition}`);
+    }
     await pool.query(`
         CREATE TABLE IF NOT EXISTS api_keys (
             id INT AUTO_INCREMENT PRIMARY KEY,

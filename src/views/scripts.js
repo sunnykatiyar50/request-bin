@@ -498,6 +498,21 @@ function showDetails(detail) {
     const headers = Object.entries(detail.headers);
     $('headerCount').textContent = headers.length || '';
     $('detailHeaders').replaceChildren(kvTable(headers, 'No headers'));
+    renderResponse(detail.response);
+}
+
+// The response the bin sent for this request: status, the rule that chose it, and the body
+function renderResponse(response) {
+    $('detailResponseNone').classList.toggle('hidden', Boolean(response));
+    $('detailResponseContent').classList.toggle('hidden', !response);
+    $('responseStatus').textContent = response ? `${response.status}${response.contentType ? ` · ${response.contentType}` : ''}` : '';
+    $('responseRule').textContent = response && response.ruleName ? `rule: ${response.ruleName}` : '';
+    if (!response) return;
+    if (!response.body) {
+        $('detailResponseContent').replaceChildren(el('span', 'muted', 'Empty body'));
+        return;
+    }
+    MessageFormat.renderMessage($('detailResponseContent'), response.body, { contentType: response.contentType, encoding: 'utf8', view: '' });
 }
 
 // Renders the body as JSON / form / multipart / HTML / XML / syslog / binary / text (see formatters.js)

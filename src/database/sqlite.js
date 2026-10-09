@@ -45,7 +45,11 @@ async function connect() {
             body_text TEXT,
             body_size INTEGER NOT NULL,
             ip TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            response_status INTEGER,
+            response_content_type TEXT,
+            response_body TEXT,
+            rule_name TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_requests_bin ON requests (bin_id, id);
         CREATE INDEX IF NOT EXISTS idx_requests_created ON requests (created_at);
@@ -72,6 +76,16 @@ async function connect() {
         ['response_rules', 'TEXT'],
     ]) {
         if (!binColumns.includes(name)) db.exec(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
+    }
+
+    const requestColumns = db.prepare('PRAGMA table_info(requests)').all().map(c => c.name);
+    for (const [name, definition] of [
+        ['response_status', 'INTEGER'],
+        ['response_content_type', 'TEXT'],
+        ['response_body', 'TEXT'],
+        ['rule_name', 'TEXT'],
+    ]) {
+        if (!requestColumns.includes(name)) db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${definition}`);
     }
 
     const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));

@@ -1,8 +1,10 @@
+const { STATUS_CODES } = require('http');
 const { version } = require('../../package.json');
 
 // Captured requests as a HAR 1.2 log (http://www.softwareishard.com/blog/har-12-spec/), which
-// browser dev tools, Postman, Insomnia and most HTTP tools can import. Only the request side is
-// known, so each entry's response is empty (status 0). Redacted header values stay "[redacted]".
+// browser dev tools, Postman, Insomnia and most HTTP tools can import. The response is the one the
+// bin sent (status, content type and body); requests captured before responses were stored have an
+// empty one (status 0). Redacted header values stay "[redacted]".
 
 function harHeaders(headers) {
     return Object.entries(headers).flatMap(([name, value]) =>
@@ -23,6 +25,34 @@ function postData(request) {
     return data;
 }
 
+function harResponse(response) {
+    if (!response) {
+        return {
+            status: 0,
+            statusText: '',
+            httpVersion: 'HTTP/1.1',
+            cookies: [],
+            headers: [],
+            content: { size: 0, mimeType: 'x-unknown' },
+            redirectURL: '',
+            headersSize: -1,
+            bodySize: -1,
+        };
+    }
+    const size = Buffer.byteLength(response.body);
+    return {
+        status: response.status,
+        statusText: STATUS_CODES[response.status] || '',
+        httpVersion: 'HTTP/1.1',
+        cookies: [],
+        headers: response.contentType ? [{ name: 'Content-Type', value: response.contentType }] : [],
+        content: { size, mimeType: response.contentType || 'x-unknown', text: response.body },
+        redirectURL: '',
+        headersSize: -1,
+        bodySize: size,
+    };
+}
+
 function toHarEntry(request, baseUrl) {
     const subPath = request.path && request.path !== '/' ? request.path : '';
     const url = `${baseUrl}/b/${request.binId}${subPath}${request.queryString ? `?${request.queryString}` : ''}`;
@@ -40,21 +70,11 @@ function toHarEntry(request, baseUrl) {
             headersSize: -1,
             bodySize: request.bodySize,
         },
-        response: {
-            status: 0,
-            statusText: '',
-            httpVersion: 'HTTP/1.1',
-            cookies: [],
-            headers: [],
-            content: { size: 0, mimeType: 'x-unknown' },
-            redirectURL: '',
-            headersSize: -1,
-            bodySize: -1,
-        },
+        response: harResponse(request.response),
         cache: {},
         timings: { send: 0, wait: 0, receive: 0 },
         ...(request.ip && { _clientIp: request.ip }),
-        comment: `Request Bin: ${request.binName || request.binId}, request #${request.id}`,
+        comment: `Request Bin: ${request.binName || request.binId}, request #${request.id}${request.response && request.response.ruleName ? `, rule "${request.response.ruleName}"` : ''}`,
     };
 }
 
