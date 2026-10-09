@@ -27,6 +27,8 @@ async function connect() {
             response_status INTEGER NOT NULL DEFAULT 200,
             response_content_type TEXT NOT NULL DEFAULT 'application/json',
             response_body TEXT NOT NULL DEFAULT '{"ok":true}',
+            response_template INTEGER NOT NULL DEFAULT 0,
+            response_delay_ms INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
 
@@ -60,6 +62,15 @@ async function connect() {
             revoked_at TEXT
         );
     `);
+
+    // Columns added after the first release, for databases created before them
+    const binColumns = db.prepare('PRAGMA table_info(bins)').all().map(c => c.name);
+    for (const [name, definition] of [
+        ['response_template', 'INTEGER NOT NULL DEFAULT 0'],
+        ['response_delay_ms', 'INTEGER NOT NULL DEFAULT 0'],
+    ]) {
+        if (!binColumns.includes(name)) db.exec(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
+    }
 
     const run = (sql, params) => db.prepare(sql).run(...params.map(toParam));
 

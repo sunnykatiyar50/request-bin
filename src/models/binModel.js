@@ -9,6 +9,8 @@ const SETTINGS = {
     responseStatus: 'response_status',
     responseContentType: 'response_content_type',
     responseBody: 'response_body',
+    responseTemplate: 'response_template',
+    responseDelayMs: 'response_delay_ms',
 };
 
 function toBin(row) {
@@ -21,14 +23,16 @@ function toBin(row) {
         responseStatus: Number(row.response_status),
         responseContentType: row.response_content_type,
         responseBody: row.response_body,
+        responseTemplate: Boolean(Number(row.response_template)),
+        responseDelayMs: Number(row.response_delay_ms),
         createdAt: toIso(row.created_at),
         ...(row.request_count !== undefined && { requestCount: Number(row.request_count) }),
         ...(row.last_request_at !== undefined && { lastRequestAt: toIso(row.last_request_at) }),
     };
 }
 
-// Bins: each has its own capture URL (/b/<id>/...), a configurable response, an optional secret
-// and header redaction. The secret is stored like API keys: a hash to check requests, and an
+// Bins: each has its own capture URL (/b/<id>/...), a configurable response (optionally templated
+// and delayed), an optional secret and header redaction. The secret is stored like API keys: a hash to check requests, and an
 // encrypted copy (key derived from SESSION_SECRET) so the dashboard can show it again.
 class BinModel {
     constructor(db, { encryptionSecret } = {}) {
@@ -46,8 +50,8 @@ class BinModel {
         const secret = withSecret ? BinModel.newSecret() : null;
         await this.db.run(
             `INSERT INTO bins (id, name, secret_hash, secret_encrypted, redact_headers, response_status,
-                               response_content_type, response_body, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               response_content_type, response_body, response_template, response_delay_ms, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 name || `Bin ${id.slice(0, 6)}`,
@@ -57,6 +61,8 @@ class BinModel {
                 settings.responseStatus ?? 200,
                 settings.responseContentType ?? 'application/json',
                 settings.responseBody ?? '{"ok":true}',
+                settings.responseTemplate ?? false,
+                settings.responseDelayMs ?? 0,
                 new Date(),
             ]
         );

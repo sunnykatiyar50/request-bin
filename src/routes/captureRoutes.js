@@ -2,6 +2,8 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { isBinId } = require('../middleware/validate');
 const { publish } = require('../events');
+const { renderTemplate } = require('../utils/template');
+const { bodyAsText } = require('../models/requestModel');
 
 const REDACTED = '[redacted]';
 
@@ -62,6 +64,34 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
         });
         publish(summary);
 
+        const responseBody = Number(bin.response_template)
+            ? renderTemplate(bin.response_body, {
+                id: summary.id,
+                binId: bin.id,
+                method: req.method,
+                path: req.capturedUrl.path,
+                queryString: req.capturedUrl.queryString,
+                headers,
+                contentType: req.get('content-type'),
+                bodyText: bodyAsText(body),
+                ip: req.ip,
+            }, bin.response_content_type)
+            : bin.response_body;
+
+        // Simulates a slow endpoint. The request is already stored, so it shows up in the dashboard
+        // straight away; a sender that gives up early just closes the connection.
+        const delay = Number(bin.response_delay_ms);
+        if (delay > 0) {
+            await new Promise(resolve => {
+                const timer = setTimeout(resolve, delay);
+                res.on('close', () => {
+                    clearTimeout(timer);
+                    resolve();
+                });
+            });
+            if (res.destroyed) return;
+        }
+
         // The bin's response is served from this origin, so lock it down: no scripts, no sniffing
         res.set({
             'Content-Security-Policy': "sandbox; default-src 'none'",
@@ -69,7 +99,7 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
             'Access-Control-Allow-Origin': '*',
             'Content-Type': bin.response_content_type,
         });
-        res.status(Number(bin.response_status)).send(bin.response_body);
+        res.status(Number(bin.response_status)).send(responseBody);
     }
 
     router.all(['/:binId', '/:binId/*rest'], limiter, loadBin, rawBody, capture);

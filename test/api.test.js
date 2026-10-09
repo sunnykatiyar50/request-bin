@@ -120,11 +120,41 @@ describe('bins', () => {
     });
 
     test('validates settings', async () => {
-        const res = await admin(request(app).post('/api/bins')).send({ responseStatus: 99, responseContentType: 'image/png', name: '' });
+        const res = await admin(request(app).post('/api/bins')).send({
+            responseStatus: 99, responseContentType: 'image/png', name: '', responseTemplate: 'yes', responseDelayMs: 60000,
+        });
         assert.equal(res.status, 400);
         assert.ok(res.body.details.responseStatus);
         assert.ok(res.body.details.responseContentType);
         assert.ok(res.body.details.name);
+        assert.ok(res.body.details.responseTemplate);
+        assert.ok(res.body.details.responseDelayMs);
+    });
+
+    test('adds the template and delay columns to a database created before them', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-migrate-'));
+        const file = path.join(dir, 'old.sqlite');
+        const { DatabaseSync } = require('node:sqlite');
+        const old = new DatabaseSync(file);
+        old.exec(`CREATE TABLE bins (id TEXT PRIMARY KEY, name TEXT NOT NULL, secret_hash TEXT, secret_encrypted TEXT,
+                  redact_headers INTEGER NOT NULL DEFAULT 1, response_status INTEGER NOT NULL DEFAULT 200,
+                  response_content_type TEXT NOT NULL DEFAULT 'application/json', response_body TEXT NOT NULL DEFAULT '{"ok":true}',
+                  created_at TEXT NOT NULL);
+                  INSERT INTO bins (id, name, created_at) VALUES ('00000000000000aa', 'Old', '2026-01-01T00:00:00.000Z');`);
+        old.close();
+
+        const previous = process.env.SQLITE_PATH;
+        process.env.SQLITE_PATH = file;
+        const migrated = await initializeDatabase();
+        process.env.SQLITE_PATH = previous;
+        try {
+            const bin = await new BinModel(migrated, { encryptionSecret: 'x'.repeat(48) }).get('00000000000000aa');
+            assert.equal(bin.responseTemplate, false);
+            assert.equal(bin.responseDelayMs, 0);
+        } finally {
+            await migrated.close();
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
     });
 });
 
@@ -208,6 +238,102 @@ describe('capture', () => {
         assert.equal(list.body.total, 5);
         assert.equal(list.body.requests[0].path, '/n7');
         assert.equal(list.body.requests[4].path, '/n3');
+    });
+
+    test('fills response templates from the request', async () => {
+        const { bin } = await createBin({
+            responseTemplate: true,
+            responseBody: '{"echo": "{{body.name}}", "attempt": {{query.attempt | 1}}, "id": {{id}}, "via": "{{method}} {{path}}"}',
+        });
+        const res = await request(app).post(`/b/${bin.id}/hook?attempt=3`).set('Content-Type', 'application/json').send({ name: 'Say "hi"' });
+        assert.equal(res.status, 200);
+        const body = JSON.parse(res.text);
+        assert.equal(body.echo, 'Say "hi"');
+        assert.equal(body.attempt, 3);
+        assert.equal(body.via, 'POST /hook');
+        assert.equal(body.id, (await latestIn(bin.id)).id);
+    });
+
+    test('serves the body as written when templating is off', async () => {
+        const { bin } = await createBin({ responseBody: '{"m": "{{method}}"}' });
+        assert.equal((await request(app).get(`/b/${bin.id}`)).text, '{"m": "{{method}}"}');
+    });
+
+    test('templates see redacted header values', async () => {
+        const { bin } = await createBin({ responseTemplate: true, responseContentType: 'text/plain', responseBody: '{{header.authorization}}' });
+        const res = await request(app).get(`/b/${bin.id}`).set('Authorization', 'Bearer real-token');
+        assert.equal(res.text, '[redacted]');
+    });
+
+    test('delays the response, with the request already stored', async () => {
+        const { bin } = await createBin({ responseDelayMs: 300 });
+        const started = Date.now();
+        const pending = request(app).post(`/b/${bin.id}/slow`).send('x').then(res => res); // .then() sends it now
+        await new Promise(resolve => setTimeout(resolve, 150));
+        assert.equal((await latestIn(bin.id)).path, '/slow');
+        const res = await pending;
+        assert.equal(res.status, 200);
+        assert.ok(Date.now() - started >= 290, `answered after ${Date.now() - started} ms`);
+    });
+});
+
+describe('export', () => {
+    test('needs authentication', async () => {
+        assert.equal((await request(app).get('/api/requests/export')).status, 401);
+    });
+
+    test('exports a bin as HAR, oldest first', async () => {
+        const { bin } = await createBin({ name: 'Export me' });
+        await request(app).post(`/b/${bin.id}/first?a=1&b=two`).set('Content-Type', 'application/x-www-form-urlencoded').send('x=1&y=2');
+        await request(app).post(`/b/${bin.id}`).set('Content-Type', 'application/octet-stream').send(Buffer.from([0, 255, 1]));
+        await request(app).get(`/b/${bin.id}/third`);
+
+        const res = await admin(request(app).get(`/api/requests/export?bin=${bin.id}`));
+        assert.equal(res.status, 200);
+        assert.match(res.headers['content-disposition'], new RegExp(`attachment; filename="request-bin-${bin.id}-\\d{8}-\\d{6}\\.har"`));
+        const { log } = res.body;
+        assert.equal(log.version, '1.2');
+        assert.equal(log.creator.name, 'Request Bin');
+        assert.equal(log.entries.length, 3);
+
+        const [first, second, third] = log.entries;
+        assert.match(first.request.url, new RegExp(`^http://127\\.0\\.0\\.1:\\d+/b/${bin.id}/first\\?a=1&b=two$`));
+        assert.deepEqual(first.request.queryString, [{ name: 'a', value: '1' }, { name: 'b', value: 'two' }]);
+        assert.equal(first.request.postData.text, 'x=1&y=2');
+        assert.deepEqual(first.request.postData.params, [{ name: 'x', value: '1' }, { name: 'y', value: '2' }]);
+        assert.ok(first.request.headers.some(h => h.name === 'content-type'));
+        assert.match(first.comment, /Export me/);
+        assert.equal(second.request.url.endsWith(`/b/${bin.id}`), true);
+        assert.deepEqual(second.request.postData, { mimeType: 'application/octet-stream', text: 'AP8B', encoding: 'base64' });
+        assert.equal(third.request.postData, undefined);
+        assert.equal(third.response.status, 0);
+    });
+
+    test('exports selected requests as JSON', async () => {
+        const { bin } = await createBin();
+        for (const p of ['/a', '/b', '/c']) await request(app).put(`/b/${bin.id}${p}`).send('body');
+        const list = await admin(request(app).get(`/api/requests?bin=${bin.id}`));
+        const ids = list.body.requests.filter(r => r.path !== '/b').map(r => r.id);
+
+        const res = await admin(request(app).get(`/api/requests/export?format=json&ids=${ids.join(',')}`));
+        assert.equal(res.status, 200);
+        assert.match(res.headers['content-disposition'], /\.json"$/);
+        assert.equal(res.body.count, 2);
+        assert.equal(res.body.truncated, false);
+        assert.deepEqual(res.body.requests.map(r => r.path), ['/a', '/c']);
+        assert.equal(res.body.requests[0].body, 'body');
+    });
+
+    test('returns an empty log when nothing matches, and validates its options', async () => {
+        const { bin } = await createBin();
+        await request(app).get(`/b/${bin.id}`);
+        const empty = await admin(request(app).get('/api/requests/export?search=nothing-matches-this'));
+        assert.equal(empty.body.log.entries.length, 0);
+
+        const bad = await admin(request(app).get('/api/requests/export?format=csv&ids=1,x'));
+        assert.equal(bad.status, 400);
+        assert.ok(bad.body.details.format);
+        assert.ok(bad.body.details.ids);
     });
 });
 

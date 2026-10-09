@@ -126,6 +126,17 @@
                         <label class="check-label admin-only"><input type="checkbox" id="selectAllCheckbox" /> Select all</label>
                         <span id="selectionInfo" class="muted"></span>
                         <span class="spacer"></span>
+                        <div class="menu-wrap">
+                            <button id="exportButton" type="button" class="ghost" aria-haspopup="menu" aria-expanded="false">
+                                <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                <span id="exportButtonLabel">Export</span>
+                            </button>
+                            <div id="exportMenu" class="menu hidden" role="menu">
+                                <div id="exportMenuTitle" class="menu-title"></div>
+                                <button type="button" role="menuitem" data-format="har">HAR <span class="muted">for dev tools, Postman, Insomnia</span></button>
+                                <button type="button" role="menuitem" data-format="json">JSON <span class="muted">full detail, as in the API</span></button>
+                            </div>
+                        </div>
                         <button id="deleteSelectedButton" type="button" class="danger-ghost admin-only" disabled>Delete selected</button>
                     </div>
                     <ul id="requestList" class="message-list"></ul>
@@ -224,6 +235,24 @@
                         <label for="binBodyInput">Response body</label>
                         <textarea id="binBodyInput" rows="3">{"ok":true}</textarea>
                     </div>
+                    <div class="field-wide bin-response-options">
+                        <label class="check-label"><input type="checkbox" id="binTemplateInput" /> Fill in <code>{{placeholders}}</code> from the request</label>
+                        <label class="delay-field" for="binDelayInput">Delay
+                            <input type="number" id="binDelayInput" min="0" max="30000" step="100" value="0" /> ms</label>
+                    </div>
+                    <details class="field-wide template-help">
+                        <summary>Placeholders</summary>
+                        <table>
+                            <tr><td><code>{{method}}</code> <code>{{path}}</code> <code>{{ip}}</code></td><td>Request method, path after the bin URL, sender IP</td></tr>
+                            <tr><td><code>{{id}}</code> <code>{{bin}}</code></td><td>The captured request's id, the bin id</td></tr>
+                            <tr><td><code>{{query}}</code> <code>{{query.page}}</code></td><td>The whole query string, or one parameter</td></tr>
+                            <tr><td><code>{{header.user-agent}}</code></td><td>A request header (hidden headers stay <code>[redacted]</code>)</td></tr>
+                            <tr><td><code>{{body}}</code> <code>{{body.user.name}}</code> <code>{{body.items[0].id}}</code></td><td>The whole body, or a JSON or form field</td></tr>
+                            <tr><td><code>{{now}}</code> <code>{{timestamp}}</code> <code>{{uuid}}</code></td><td>Current ISO time, Unix time in ms, a random UUID</td></tr>
+                            <tr><td><code>{{query.page | 1}}</code></td><td>Text after <code>|</code> is used when the value is missing</td></tr>
+                        </table>
+                        <p class="hint">Values are escaped for the response type (JSON strings, HTML/XML entities). In JSON, numbers and objects are inserted as JSON: <code>{"user": {{body.user}}}</code>.</p>
+                    </details>
                 </div>
                 <label class="check-label"><input type="checkbox" id="binRedactInput" checked /> Hide sensitive headers (Authorization, Cookie, X-API-Key…) when storing requests</label>
                 <label id="binSecretField" class="check-label"><input type="checkbox" id="binSecretInput" /> Require a secret (<code>X-Bin-Secret</code> header or <code>?secret=</code>)</label>
@@ -413,6 +442,7 @@
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/requests/latest?bin=…</code><br>Newest matching request in full (headers, query, body), or 404</td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/requests</code><br><code>bin</code>, <code>method</code>, <code>search</code>, <code>from</code>, <code>to</code>, <code>page</code>, <code>pageSize</code> (max 100)</td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/requests/:id</code><br>One request in full; <code>bodyEncoding</code> is <code>utf8</code> or <code>base64</code></td></tr>
+                        <tr><th><span class="method method-get">GET</span></th><td><code>/api/requests/export</code><br>Same filters, plus <code>format</code> (<code>har</code> or <code>json</code>) and <code>ids=1,2,3</code>; newest 1000, oldest first</td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/bins</code><br>Bins with their request counts</td></tr>
                         <tr><th><span class="method method-get">GET</span></th><td><code>/api/stream?bin=…</code><br>Server-sent events: one <code>request</code> event per new request</td></tr>
                         <tr><th><span class="method method-delete">ADMIN</span></th><td><code>POST/PATCH/DELETE /api/bins</code>, <code>DELETE /api/requests</code><br>Need <code>ADMIN_TOKEN</code></td></tr>

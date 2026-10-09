@@ -26,9 +26,23 @@ async function connect() {
             response_status INT NOT NULL DEFAULT 200,
             response_content_type VARCHAR(64) NOT NULL DEFAULT 'application/json',
             response_body TEXT NOT NULL,
+            response_template TINYINT(1) NOT NULL DEFAULT 0,
+            response_delay_ms INT NOT NULL DEFAULT 0,
             created_at DATETIME(3) NOT NULL
         ) DEFAULT CHARSET = utf8mb4
     `);
+    // Columns added after the first release, for databases created before them
+    // (MySQL has no ADD COLUMN IF NOT EXISTS)
+    const [binColumns] = await pool.query(
+        "SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'bins'"
+    );
+    const existing = binColumns.map(c => c.name);
+    for (const [name, definition] of [
+        ['response_template', 'TINYINT(1) NOT NULL DEFAULT 0'],
+        ['response_delay_ms', 'INT NOT NULL DEFAULT 0'],
+    ]) {
+        if (!existing.includes(name)) await pool.query(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
+    }
     await pool.query(`
         CREATE TABLE IF NOT EXISTS requests (
             id INT AUTO_INCREMENT PRIMARY KEY,

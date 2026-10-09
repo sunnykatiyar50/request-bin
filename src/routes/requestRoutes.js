@@ -1,6 +1,9 @@
 const express = require('express');
-const { validateRequestQuery, validateIdParam, validateIdList, isBinId } = require('../middleware/validate');
+const { validateRequestQuery, validateExportQuery, validateIdParam, validateIdList, isBinId } = require('../middleware/validate');
 const { subscribe } = require('../events');
+const { toHar } = require('../utils/har');
+
+const EXPORT_LIMIT = 1000;
 
 // /api/requests: reading needs a Read key, a viewer or an admin; deleting needs an admin
 function createRequestRoutes({ requestModel, auth }) {
@@ -17,6 +20,22 @@ function createRequestRoutes({ requestModel, auth }) {
         const request = await requestModel.latest(req.listQuery.filters);
         if (!request) return res.status(404).json({ error: 'No matching request found' });
         res.json(request);
+    });
+
+    // Download matching (or the listed) requests as HAR or JSON: the newest EXPORT_LIMIT, oldest first
+    router.get('/export', auth.requireRead, validateRequestQuery, validateExportQuery, async (req, res) => {
+        const { truncated, requests } = await requestModel.export(req.listQuery.filters, EXPORT_LIMIT);
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-'); // 20261009-142233
+        const binPart = req.listQuery.filters.binId ? `-${req.listQuery.filters.binId}` : '';
+        res.set({
+            'Cache-Control': 'no-store',
+            'Content-Disposition': `attachment; filename="request-bin${binPart}-${stamp}.${req.exportFormat}"`,
+            ...(truncated && { 'X-Export-Truncated': 'true' }),
+        });
+        if (req.exportFormat === 'json') {
+            return res.json({ exportedAt: new Date().toISOString(), count: requests.length, truncated, requests });
+        }
+        res.json(toHar(requests, { baseUrl: `${req.protocol}://${req.get('host')}`, truncated }));
     });
 
     router.get('/:id', auth.requireRead, validateIdParam, async (req, res) => {
