@@ -1,18 +1,12 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const os = require('os');
-const path = require('path');
-const fs = require('fs');
 
-process.env.NODE_ENV = 'test';
-process.env.DB_TYPE = 'sqlite';
-process.env.LOG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-keys-logs-'));
-// A file database, so a second app instance with a different secret can open the same keys
-process.env.SQLITE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'rb-keys-db-')), 'keys.sqlite');
+// A file (or server) database, so a second app instance with a different secret can open the same keys
+const { setupTestEnv, openTestDatabase } = require('./helpers/database');
+setupTestEnv('keys');
 
 const request = require('supertest');
 const { loadConfig } = require('../src/config');
-const initializeDatabase = require('../src/database/initDatabase');
 const BinModel = require('../src/models/binModel');
 const RequestModel = require('../src/models/requestModel');
 const ApiKeyModel = require('../src/models/apiKeyModel');
@@ -43,7 +37,7 @@ function buildApp(overrides = {}) {
 }
 
 before(async () => {
-    db = await initializeDatabase();
+    db = await openTestDatabase();
     app = buildApp();
     bin = (await admin(request(app).post('/api/bins')).send({ name: 'hooks' })).body.bin;
     await request(app).post(`/b/${bin.id}/event`).set('Content-Type', 'application/json').send('{"id":1}');
