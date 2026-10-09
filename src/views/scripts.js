@@ -60,6 +60,8 @@ const ICONS = {
     edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     eraser: '<path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><line x1="6" y1="11" x2="13" y2="18"/>',
     trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+    up: '<polyline points="6 15 12 9 18 15"/>',
+    down: '<polyline points="6 9 12 15 18 9"/>',
     ban: '<circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>',
 };
 
@@ -761,6 +763,152 @@ async function deleteSelectedRequests() {
 
 // --- Bins page ---
 
+// --- Response rules editor (in the bin form) ---
+
+const RULE_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const RULE_CONTENT_TYPES = ['application/json', 'text/plain', 'application/xml', 'text/xml', 'text/html'];
+
+function ruleInput(type, className, value, placeholder, extra = {}) {
+    const input = el('input', className);
+    input.type = type;
+    input.value = value ?? '';
+    if (placeholder) input.placeholder = placeholder;
+    input.autocomplete = 'off';
+    Object.assign(input, extra);
+    return input;
+}
+
+function ruleSelect(options, value, anyLabel) {
+    const select = el('select');
+    if (anyLabel) select.appendChild(new Option(anyLabel, ''));
+    options.forEach(option => select.appendChild(new Option(option, option)));
+    select.value = value || '';
+    return select;
+}
+
+function ruleField(label, ...controls) {
+    const wrap = el('label', 'rule-field');
+    wrap.appendChild(el('span', 'rule-label', label));
+    const row = el('span', 'rule-controls');
+    controls.forEach(control => row.appendChild(control));
+    wrap.appendChild(row);
+    return wrap;
+}
+
+function updateRulesSummary() {
+    const count = $('binRules').children.length;
+    $('binRulesSummary').textContent = count ? `Response rules (${count})` : 'Response rules';
+}
+
+function moveRule(card, direction) {
+    const sibling = direction < 0 ? card.previousElementSibling : card.nextElementSibling;
+    if (!sibling) return;
+    if (direction < 0) card.parentNode.insertBefore(card, sibling);
+    else card.parentNode.insertBefore(sibling, card);
+    renumberRules();
+}
+
+function renumberRules() {
+    [...$('binRules').children].forEach((card, i) => {
+        card.querySelector('.rule-number').textContent = `Rule ${i + 1}`;
+    });
+    updateRulesSummary();
+}
+
+// One rule as an editable card; card.readRule() returns the rule as the API expects it
+function ruleCard(rule = {}) {
+    const match = rule.match || {};
+    const response = rule.response || {};
+    const card = el('div', 'rule-card');
+
+    const head = el('div', 'rule-head');
+    head.appendChild(el('strong', 'rule-number', 'Rule'));
+    const name = ruleInput('text', 'rule-name', rule.name, 'Name (optional)', { maxLength: 100 });
+    head.appendChild(name);
+    head.appendChild(iconButton('up', 'Move up', () => moveRule(card, -1)));
+    head.appendChild(iconButton('down', 'Move down', () => moveRule(card, 1)));
+    head.appendChild(iconButton('trash', 'Remove rule', () => {
+        card.remove();
+        renumberRules();
+    }, { danger: true }));
+    card.appendChild(head);
+    head.querySelectorAll('button').forEach(b => { b.type = 'button'; });
+
+    card.appendChild(el('div', 'rule-section', 'When the request matches'));
+    const grid = el('div', 'rule-grid');
+    const method = ruleSelect(RULE_METHODS, match.method, 'Any method');
+    const path = ruleInput('text', null, match.path, '/orders/*', { maxLength: 200 });
+    const headerName = ruleInput('text', null, match.header && match.header.name, 'X-Event', { maxLength: 200 });
+    const headerValue = ruleInput('text', null, match.header && match.header.value, 'any value', { maxLength: 200 });
+    const queryName = ruleInput('text', null, match.query && match.query.name, 'mode', { maxLength: 200 });
+    const queryValue = ruleInput('text', null, match.query && match.query.value, 'any value', { maxLength: 200 });
+    const bodyPath = ruleInput('text', null, match.body && match.body.path, 'order.status', { maxLength: 200 });
+    const bodyValue = ruleInput('text', null, match.body && match.body.value, 'any value', { maxLength: 200 });
+    grid.appendChild(ruleField('Method', method));
+    grid.appendChild(ruleField('Path', path));
+    grid.appendChild(ruleField('Header', headerName, headerValue));
+    grid.appendChild(ruleField('Query parameter', queryName, queryValue));
+    grid.appendChild(ruleField('JSON or form field', bodyPath, bodyValue));
+    card.appendChild(grid);
+
+    card.appendChild(el('div', 'rule-section', 'Respond with'));
+    const out = el('div', 'rule-grid');
+    const status = ruleInput('number', null, response.status, '(bin default)', { min: 200, max: 599 });
+    const type = ruleSelect(RULE_CONTENT_TYPES, response.contentType, '(bin default)');
+    const delay = ruleInput('number', null, response.delayMs, '(bin default)', { min: 0, max: 30000, step: 100 });
+    const template = ruleSelect(['yes', 'no'], response.template === undefined ? '' : response.template ? 'yes' : 'no', '(bin default)');
+    const body = el('textarea', 'rule-body');
+    body.rows = 2;
+    body.placeholder = '(bin default)';
+    body.value = response.body ?? '';
+    body.dataset.set = response.body === undefined ? '' : '1';
+    body.addEventListener('input', () => { body.dataset.set = '1'; });
+    out.appendChild(ruleField('Status', status));
+    out.appendChild(ruleField('Content type', type));
+    out.appendChild(ruleField('Delay (ms)', delay));
+    out.appendChild(ruleField('Fill in placeholders', template));
+    const bodyField = ruleField('Body', body);
+    bodyField.classList.add('rule-wide');
+    out.appendChild(bodyField);
+    card.appendChild(out);
+
+    const text = input => input.value.trim();
+    card.readRule = () => {
+        const rule = {};
+        if (text(name)) rule.name = text(name);
+        rule.match = {};
+        if (method.value) rule.match.method = method.value;
+        if (text(path)) rule.match.path = text(path);
+        for (const [key, nameInput, valueInput, field] of [
+            ['header', headerName, headerValue, 'name'],
+            ['query', queryName, queryValue, 'name'],
+            ['body', bodyPath, bodyValue, 'path'],
+        ]) {
+            if (!text(nameInput)) continue;
+            rule.match[key] = { [field]: text(nameInput), ...(valueInput.value !== '' && { value: valueInput.value }) };
+        }
+        rule.response = {};
+        if (status.value !== '') rule.response.status = Number(status.value);
+        if (type.value) rule.response.contentType = type.value;
+        if (delay.value !== '') rule.response.delayMs = Number(delay.value);
+        if (template.value) rule.response.template = template.value === 'yes';
+        if (body.dataset.set) rule.response.body = body.value;
+        return rule;
+    };
+    return card;
+}
+
+function renderRules(rules) {
+    const list = $('binRules');
+    list.replaceChildren(...rules.map(ruleCard));
+    renumberRules();
+    $('binRulesDetails').open = rules.length > 0;
+}
+
+function readRules() {
+    return [...$('binRules').children].map(card => card.readRule());
+}
+
 let editingBin = null; // the bin being edited, or null when creating
 
 function binResponseSummary(bin) {
@@ -769,6 +917,7 @@ function binResponseSummary(bin) {
         bin.responseContentType,
         ...(bin.responseTemplate ? ['templated'] : []),
         ...(bin.responseDelayMs ? [`${bin.responseDelayMs} ms delay`] : []),
+        ...(bin.responseRules.length ? [`${bin.responseRules.length} rule${bin.responseRules.length === 1 ? '' : 's'}`] : []),
     ].join(' · ');
 }
 
@@ -840,6 +989,7 @@ function openBinForm(bin = null) {
     $('binBodyInput').value = bin ? bin.responseBody : '{"ok":true}';
     $('binTemplateInput').checked = bin ? bin.responseTemplate : false;
     $('binDelayInput').value = bin ? bin.responseDelayMs : 0;
+    renderRules(bin ? bin.responseRules : []);
     $('binRedactInput').checked = bin ? bin.redactHeaders : true;
     $('binSecretInput').checked = false;
     // New bins: a checkbox. Existing bins: add / replace / remove buttons
@@ -887,6 +1037,7 @@ async function saveBin(event) {
         responseBody: $('binBodyInput').value,
         responseTemplate: $('binTemplateInput').checked,
         responseDelayMs: Number($('binDelayInput').value) || 0,
+        responseRules: readRules(),
         redactHeaders: $('binRedactInput').checked,
     };
     if (editingBin && !settings.name) {
@@ -1254,6 +1405,10 @@ window.addEventListener('DOMContentLoaded', () => {
     // Bins
     $('newBinButton').addEventListener('click', () => openBinForm());
     $('cancelBinButton').addEventListener('click', closeBinForm);
+    $('addRuleButton').addEventListener('click', () => {
+        $('binRules').appendChild(ruleCard());
+        renumberRules();
+    });
     $('binForm').addEventListener('submit', saveBin);
     $('binSecretAdd').addEventListener('click', () => changeBinSecret('add'));
     $('binSecretRotate').addEventListener('click', () => changeBinSecret('rotate'));

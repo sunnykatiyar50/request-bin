@@ -2139,6 +2139,88 @@ body.role-viewer .admin-only {
     margin: 0;
 }
 
+/* Response rules editor, in the bin form */
+.rules-editor summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--blue);
+}
+
+.rules-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 10px 0;
+}
+
+.rule-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: var(--surface-alt);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.rule-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.rule-head .rule-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.rule-number {
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.rule-section {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.rule-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px 12px;
+}
+
+.rule-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 0;
+}
+
+.rule-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.rule-controls > * {
+    flex: 1;
+    min-width: 0;
+}
+
+.rule-wide {
+    grid-column: 1 / -1;
+}
+
+.rule-body {
+    font-family: var(--mono);
+    resize: vertical;
+}
+
 /* Export menu, in the request list toolbar */
 .menu-wrap {
     position: relative;

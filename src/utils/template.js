@@ -81,4 +81,4 @@ function renderTemplate(template, request, contentType) {
     });
 }
 
-module.exports = { renderTemplate };
+module.exports = { renderTemplate, parseBody, lookup };

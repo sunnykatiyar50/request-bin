@@ -8,6 +8,7 @@ const MAX_BULK_DELETE = 500;
 const EXPORT_FORMATS = ['har', 'json'];
 const MAX_RESPONSE_BODY = 64 * 1024;
 const MAX_RESPONSE_DELAY_MS = 30 * 1000;
+const MAX_RULES = 20;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function badRequest(res, details) {
@@ -111,6 +112,99 @@ function validateExportQuery(req, res, next) {
     next();
 }
 
+const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// A response rule's `response` part: any of status, contentType, body, template, delayMs
+function parseRuleResponse(src, errors, at) {
+    const out = {};
+    if (!isPlainObject(src)) {
+        errors[at] = 'must be an object';
+        return out;
+    }
+    if (src.status !== undefined) {
+        if (!Number.isInteger(src.status) || src.status < 200 || src.status > 599) errors[`${at}.status`] = 'must be an integer between 200 and 599';
+        else out.status = src.status;
+    }
+    if (src.contentType !== undefined) {
+        if (!RESPONSE_CONTENT_TYPES.includes(src.contentType)) errors[`${at}.contentType`] = `must be one of ${RESPONSE_CONTENT_TYPES.join(', ')}`;
+        else out.contentType = src.contentType;
+    }
+    if (src.body !== undefined) {
+        if (typeof src.body !== 'string' || src.body.length > MAX_RESPONSE_BODY) errors[`${at}.body`] = `must be a string of at most ${MAX_RESPONSE_BODY} characters`;
+        else out.body = src.body;
+    }
+    if (src.template !== undefined) {
+        if (typeof src.template !== 'boolean') errors[`${at}.template`] = 'must be true or false';
+        else out.template = src.template;
+    }
+    if (src.delayMs !== undefined) {
+        if (!Number.isInteger(src.delayMs) || src.delayMs < 0 || src.delayMs > MAX_RESPONSE_DELAY_MS) errors[`${at}.delayMs`] = `must be an integer between 0 and ${MAX_RESPONSE_DELAY_MS}`;
+        else out.delayMs = src.delayMs;
+    }
+    return out;
+}
+
+// A { <key>, value? } condition, where `key` is the header, query or body field it looks at
+function parseCondition(src, key, errors, at) {
+    if (!isPlainObject(src) || typeof src[key] !== 'string' || src[key].trim() === '' || src[key].length > 200) {
+        errors[at] = `must be an object with a ${key} of 1-200 characters`;
+        return undefined;
+    }
+    if (src.value !== undefined && (typeof src.value !== 'string' || src.value.length > 200)) {
+        errors[`${at}.value`] = 'must be a string of at most 200 characters';
+        return undefined;
+    }
+    return { [key]: src[key].trim(), ...(src.value !== undefined && { value: src.value }) };
+}
+
+// Response rules: an array of up to MAX_RULES { name?, match, response }
+function parseRules(value, errors) {
+    if (!Array.isArray(value) || value.length > MAX_RULES) {
+        errors.responseRules = `must be an array of up to ${MAX_RULES} rules`;
+        return undefined;
+    }
+    const before = Object.keys(errors).length;
+    const rules = value.map((src, i) => {
+        const at = `responseRules[${i}]`;
+        if (!isPlainObject(src)) {
+            errors[at] = 'must be an object';
+            return null;
+        }
+        const rule = {};
+        if (src.name !== undefined) {
+            if (typeof src.name !== 'string' || src.name.length > 100) errors[`${at}.name`] = 'must be a string of at most 100 characters';
+            else if (src.name.trim()) rule.name = src.name.trim();
+        }
+        const matchSrc = src.match;
+        rule.match = {};
+        if (!isPlainObject(matchSrc)) errors[`${at}.match`] = 'must be an object';
+        else {
+            if (matchSrc.method !== undefined) {
+                const method = typeof matchSrc.method === 'string' ? matchSrc.method.toUpperCase() : '';
+                if (!METHODS.includes(method)) errors[`${at}.match.method`] = `must be one of ${METHODS.join(', ')}`;
+                else rule.match.method = method;
+            }
+            if (matchSrc.path !== undefined) {
+                if (typeof matchSrc.path !== 'string' || matchSrc.path === '' || matchSrc.path.length > 200) errors[`${at}.match.path`] = 'must be a string of 1-200 characters';
+                else rule.match.path = matchSrc.path;
+            }
+            for (const [field, key] of [['header', 'name'], ['query', 'name'], ['body', 'path']]) {
+                if (matchSrc[field] === undefined) continue;
+                const condition = parseCondition(matchSrc[field], key, errors, `${at}.match.${field}`);
+                if (condition) rule.match[field] = condition;
+            }
+            if (Object.keys(matchSrc).some(k => !['method', 'path', 'header', 'query', 'body'].includes(k))) {
+                errors[`${at}.match`] = 'may only contain method, path, header, query and body';
+            } else if (Object.keys(rule.match).length === 0 && !errors[`${at}.match`]) {
+                errors[`${at}.match`] = 'needs at least one condition';
+            }
+        }
+        rule.response = parseRuleResponse(src.response, errors, `${at}.response`);
+        return rule;
+    });
+    return Object.keys(errors).length > before ? undefined : rules;
+}
+
 // Bin settings in a create/update body; returns { settings } or { errors }
 function parseBinSettings(body = {}) {
     const errors = {};
@@ -147,6 +241,10 @@ function parseBinSettings(body = {}) {
         if (!Number.isInteger(body.responseDelayMs) || body.responseDelayMs < 0 || body.responseDelayMs > MAX_RESPONSE_DELAY_MS) {
             errors.responseDelayMs = `must be an integer between 0 and ${MAX_RESPONSE_DELAY_MS}`;
         } else settings.responseDelayMs = body.responseDelayMs;
+    }
+    if (body.responseRules !== undefined) {
+        const rules = parseRules(body.responseRules, errors);
+        if (rules) settings.responseRules = rules;
     }
     return Object.keys(errors).length ? { errors } : { settings };
 }

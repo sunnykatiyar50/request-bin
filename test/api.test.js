@@ -262,6 +262,107 @@ describe('capture', () => {
     });
 });
 
+describe('response rules', () => {
+    const rules = [
+        { name: 'deleted', match: { method: 'DELETE' }, response: { status: 204, body: '' } },
+        {
+            name: 'stripe paid',
+            match: { path: '/stripe/*', body: { path: 'type', value: 'invoice.*' } },
+            response: { status: 201, body: '{"received":"{{body.id}}"}', template: true },
+        },
+        { name: 'maintenance', match: { header: { name: 'X-Mode', value: 'maintenance' } }, response: { status: 503, contentType: 'text/plain', body: 'back soon' } },
+    ];
+
+    test('are saved with the bin and returned in its settings', async () => {
+        const { bin } = await createBin({ responseRules: rules });
+        assert.deepEqual(bin.responseRules, rules);
+        const fetched = await admin(request(app).get(`/api/bins/${bin.id}`));
+        assert.deepEqual(fetched.body.responseRules, rules);
+        const list = await admin(request(app).get('/api/bins'));
+        assert.deepEqual(list.body.bins.find(b => b.id === bin.id).responseRules, rules);
+    });
+
+    test('a bin without rules has an empty list, and an empty list removes them', async () => {
+        const { bin } = await createBin();
+        assert.deepEqual(bin.responseRules, []);
+        await admin(request(app).patch(`/api/bins/${bin.id}`)).send({ responseRules: rules });
+        const cleared = await admin(request(app).patch(`/api/bins/${bin.id}`)).send({ responseRules: [] });
+        assert.deepEqual(cleared.body.responseRules, []);
+    });
+
+    test('change the response of matching requests, and the rest get the bin response', async () => {
+        const { bin } = await createBin({ responseRules: rules, responseBody: '{"default":true}' });
+
+        const deleted = await request(app).delete(`/b/${bin.id}/anything`);
+        assert.equal(deleted.status, 204);
+
+        const stripe = await request(app).post(`/b/${bin.id}/stripe/events`).set('Content-Type', 'application/json')
+            .send(JSON.stringify({ type: 'invoice.paid', id: 'evt_1' }));
+        assert.equal(stripe.status, 201);
+        assert.equal(stripe.text, '{"received":"evt_1"}');
+        assert.match(stripe.headers['content-type'], /application\/json/);
+
+        const other = await request(app).post(`/b/${bin.id}/stripe/events`).set('Content-Type', 'application/json')
+            .send(JSON.stringify({ type: 'customer.created' }));
+        assert.equal(other.status, 200);
+        assert.equal(other.text, '{"default":true}');
+
+        const maintenance = await request(app).get(`/b/${bin.id}`).set('X-Mode', 'maintenance');
+        assert.equal(maintenance.status, 503);
+        assert.equal(maintenance.text, 'back soon');
+        assert.match(maintenance.headers['content-type'], /text\/plain/);
+    });
+
+    test('use the first matching rule', async () => {
+        const { bin } = await createBin({
+            responseRules: [
+                { match: { method: 'POST' }, response: { status: 202 } },
+                { match: { path: '/a' }, response: { status: 418 } },
+            ],
+        });
+        assert.equal((await request(app).post(`/b/${bin.id}/a`).send('x')).status, 202);
+        assert.equal((await request(app).get(`/b/${bin.id}/a`)).status, 418);
+        assert.equal((await request(app).get(`/b/${bin.id}/b`)).status, 200);
+    });
+
+    test('a rule can set its own delay', async () => {
+        const { bin } = await createBin({ responseRules: [{ match: { path: '/slow' }, response: { delayMs: 200 } }] });
+        const started = Date.now();
+        await request(app).get(`/b/${bin.id}/slow`);
+        assert.ok(Date.now() - started >= 190);
+        const fast = Date.now();
+        await request(app).get(`/b/${bin.id}/fast`);
+        assert.ok(Date.now() - fast < 190);
+    });
+
+    test('are checked for validity', async () => {
+        const bad = async (responseRules, field) => {
+            const res = await admin(request(app).post('/api/bins')).send({ responseRules });
+            assert.equal(res.status, 400, JSON.stringify(responseRules));
+            assert.ok(Object.keys(res.body.details).some(k => k.startsWith(field)), JSON.stringify(res.body.details));
+        };
+        await bad('nope', 'responseRules');
+        await bad(Array.from({ length: 21 }, () => ({ match: { method: 'GET' }, response: {} })), 'responseRules');
+        await bad([null], 'responseRules[0]');
+        await bad([{ match: {}, response: {} }], 'responseRules[0].match');
+        await bad([{ response: {} }], 'responseRules[0].match');
+        await bad([{ match: { method: 'FETCH' }, response: {} }], 'responseRules[0].match.method');
+        await bad([{ match: { colour: 'red' }, response: {} }], 'responseRules[0].match');
+        await bad([{ match: { header: { value: 'x' } }, response: {} }], 'responseRules[0].match.header');
+        await bad([{ match: { body: { path: '' } }, response: {} }], 'responseRules[0].match.body');
+        await bad([{ match: { method: 'GET' }, response: { status: 99 } }], 'responseRules[0].response.status');
+        await bad([{ match: { method: 'GET' }, response: { contentType: 'image/png' } }], 'responseRules[0].response.contentType');
+        await bad([{ match: { method: 'GET' }, response: { delayMs: 31000 } }], 'responseRules[0].response.delayMs');
+        await bad([{ match: { method: 'GET' } }], 'responseRules[0].response');
+    });
+
+    test('can only be changed by an admin', async () => {
+        const { bin } = await createBin();
+        const res = await request(app).patch(`/api/bins/${bin.id}`).send({ responseRules: rules });
+        assert.equal(res.status, 401);
+    });
+});
+
 describe('export', () => {
     test('needs authentication', async () => {
         assert.equal((await request(app).get('/api/requests/export')).status, 401);
