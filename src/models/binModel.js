@@ -3,6 +3,7 @@ const { toIso } = require('../utils/time');
 const { hashApiKey, createKeyCipher } = require('../utils/apiKeys');
 const { safeEqual } = require('../utils/session');
 const { parseStoredRules } = require('../utils/rules');
+const { parseStoredForward } = require('../utils/forward');
 
 const SETTINGS = {
     name: 'name',
@@ -13,10 +14,16 @@ const SETTINGS = {
     responseTemplate: 'response_template',
     responseDelayMs: 'response_delay_ms',
     responseRules: 'response_rules',
+    forwardConfig: 'forward_config',
 };
 
 // Rules are stored as JSON text; no rules is NULL
 const serializeRules = rules => (Array.isArray(rules) && rules.length ? JSON.stringify(rules) : null);
+
+// Forwarding is stored as JSON text; a bin that never forwarded is NULL
+const serializeForward = config => (config && (config.enabled || config.url)
+    ? JSON.stringify({ enabled: config.enabled === true, url: config.url || '', methods: config.methods || [] })
+    : null);
 
 function toBin(row) {
     if (!row) return null;
@@ -31,6 +38,7 @@ function toBin(row) {
         responseTemplate: Boolean(Number(row.response_template)),
         responseDelayMs: Number(row.response_delay_ms),
         responseRules: parseStoredRules(row.response_rules),
+        forwardConfig: parseStoredForward(row.forward_config),
         createdAt: toIso(row.created_at),
         ...(row.request_count !== undefined && { requestCount: Number(row.request_count) }),
         ...(row.last_request_at !== undefined && { lastRequestAt: toIso(row.last_request_at) }),
@@ -56,8 +64,8 @@ class BinModel {
         const secret = withSecret ? BinModel.newSecret() : null;
         await this.db.run(
             `INSERT INTO bins (id, name, secret_hash, secret_encrypted, redact_headers, response_status,
-                               response_content_type, response_body, response_template, response_delay_ms, response_rules, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                               response_content_type, response_body, response_template, response_delay_ms, response_rules, forward_config, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 id,
                 name || `Bin ${id.slice(0, 6)}`,
@@ -70,6 +78,7 @@ class BinModel {
                 settings.responseTemplate ?? false,
                 settings.responseDelayMs ?? 0,
                 serializeRules(settings.responseRules),
+                serializeForward(settings.forwardConfig),
                 new Date(),
             ]
         );
@@ -110,7 +119,11 @@ class BinModel {
         for (const [key, column] of Object.entries(SETTINGS)) {
             if (settings[key] === undefined) continue;
             sets.push(`${column} = ?`);
-            params.push(key === 'responseRules' ? serializeRules(settings[key]) : settings[key]);
+            params.push(
+                key === 'responseRules' ? serializeRules(settings[key])
+                    : key === 'forwardConfig' ? serializeForward(settings[key])
+                        : settings[key]
+            );
         }
         if (sets.length) await this.db.run(`UPDATE bins SET ${sets.join(', ')} WHERE id = ?`, [...params, id]);
         return this.get(id);

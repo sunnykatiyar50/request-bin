@@ -138,6 +138,7 @@ function createAuth(config, { apiKeyModel } = {}) {
             authDisabled: config.authDisabled,
             username: user ? user.username : null,
             role: user ? user.role : null,
+            forwardingEnabled: Boolean(user) && (config.forwardAllowedHosts || []).length > 0,
         });
     }
 

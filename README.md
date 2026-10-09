@@ -13,6 +13,7 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
   - **Sent response recorded**: each captured request keeps the status, content type and body the bin answered with (templates as rendered) and the name of the rule that chose it, shown in the request's detail pane.
   - **Response delay** of up to 30 seconds, to test sender timeouts and retries.
   - **Response rules**: different responses by method, path, header, query parameter or body field, so one bin can mock several endpoints. See [Response rules](#response-rules).
+  - **Forwarding and replay**: pass captured requests on to another URL, automatically per bin or by hand with **Replay**, only to hosts you allow. See [Forwarding and replay](#forwarding-and-replay).
   - Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, …) are **redacted** before storing, on by default and switchable per bin.
 - **Dashboard** with a resizable sidebar and a live request list (server-sent events: new requests appear as they arrive):
   - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; **export** the matching or selected requests as **HAR** (for browser dev tools, Postman, Insomnia) or JSON; keyboard navigation (↑/↓ or j/k); a resizable detail pane with copy URL, **copy as cURL** and copy body.
@@ -298,13 +299,45 @@ With `responseTemplate` on, placeholders in the response body are filled in from
 
 Unknown placeholders and missing values without a fallback become empty. Values are escaped for the response content type: JSON string escaping for `application/json`, and HTML/XML entities for HTML and XML. In JSON responses, numbers, booleans, objects and arrays are inserted as JSON, so both `{"user": {{body.user}}}` and `{"name": "{{body.user.name}}"}` produce valid JSON.
 
+### Forwarding and replay
+
+A bin can pass every request it captures on to another URL (a webhook relay for local development, or a second consumer), and any captured request can be **replayed** from the dashboard. Both are **off until you set `FORWARD_ALLOWED_HOSTS`**: requests are sent only to the hosts listed there.
+
+```
+FORWARD_ALLOWED_HOSTS=api.example.com,*.hooks.example.com,localhost:3000
+```
+
+| Entry | Allows |
+|-------|--------|
+| `api.example.com` | That host, on any port |
+| `api.example.com:8443` | That host, on that port only |
+| `*.hooks.example.com` | Its subdomains (not `hooks.example.com` itself) |
+| `10.0.0.5`, `[::1]:9000` | An IP address |
+
+What a request to a target can and can't do:
+- **Internal addresses need an exact entry.** Loopback, private (10/8, 172.16/12, 192.168/16, fc00::/7), CGNAT and similar addresses are refused unless the host is named exactly (`localhost:3000`, `10.0.0.5`, `intranet.example.com`). A wildcard entry can never reach them.
+- **Link-local and cloud-metadata addresses are never allowed** (`169.254.0.0/16`, including `169.254.169.254`, `fe80::/10`, `fd00:ec2::254`), even when listed.
+- **The address is checked on the connection itself.** A name that resolves to an internal address (or changes its answer after being checked) is refused, so DNS tricks don't get past the allowlist.
+- Only `http` and `https`, no credentials in the URL, **redirects are not followed**, and each request has a timeout (`FORWARD_TIMEOUT_MS`, default 10 s) and a cap on how much of the reply is read (64 KB).
+- Everything is sent as it was captured (method, body bytes, headers) except connection-level headers and **headers stored as `[redacted]`**, whose real values are gone. A bin with redaction off passes `Authorization` and `Cookie` on, so only forward to targets you trust. Requests also carry `X-Forwarded-By: request-bin`, `X-Request-Bin-Id` and `X-Request-Bin-Hops`; a request forwarded three times is not forwarded again, which stops loops between bins.
+
+**Automatic forwarding** is set per bin (Bins page, "Forwarding", or `forwardConfig`):
+
+```
+{ "forwardConfig": { "enabled": true, "url": "http://localhost:3000/webhook", "methods": ["POST", "PUT"] } }
+```
+
+Requests go to exactly that URL (the sub-path and query string of the captured request are not added), after the sender has its answer, so a slow or failing target never changes what the sender sees. Leave `methods` empty to forward all of them. The outcome is stored on the request (`forward`: `{ target, status, statusText, durationMs }` or `{ target, error }`) and shown in its detail pane; the target is recorded without its query string, which may carry a token. The URL itself is visible to admins only: other users and Read keys see `"[hidden]"`.
+
+**Replay** sends one captured request again: `POST /api/requests/:id/replay` (Admin) with `{ "url": "https://api.example.com/hook", "method": "PUT" }` (`method` is optional and defaults to the original). It answers with what the target replied (`status`, `statusText`, `headers`, `body`, `truncated`, `durationMs`), `400` when the target isn't allowed or forwarding is off, and `502` when it can't be reached. The dashboard's **Replay…** button does the same.
+
 ### Bins: `/api/bins`
 
 | Method and path | Access | Description |
 |-----------------|--------|-------------|
 | `GET /api/bins` | Read | All bins, with `requestCount` and `lastRequestAt` |
 | `GET /api/bins/:id` | Read | One bin |
-| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB), `responseTemplate` (true/false, default false), `responseDelayMs` (0–30000, default 0), `responseRules` (up to 20, see [Response rules](#response-rules)). Returns `{ bin, secret? }` |
+| `POST /api/bins` | Admin | Create. Body (all optional): `name`, `withSecret` (true/false), `redactHeaders` (true/false, default true), `responseStatus` (200–599), `responseContentType` (`application/json`, `text/plain`, `application/xml`, `text/xml`, `text/html`), `responseBody` (up to 64 KB), `responseTemplate` (true/false, default false), `responseDelayMs` (0–30000, default 0), `responseRules` (up to 20, see [Response rules](#response-rules)), `forwardConfig` (see [Forwarding and replay](#forwarding-and-replay)). Returns `{ bin, secret? }` |
 | `PATCH /api/bins/:id` | Admin | Change any of the settings above except `withSecret` |
 | `DELETE /api/bins/:id` | Admin | Delete the bin and its requests |
 | `POST /api/bins/:id/secret` | Admin | Set a new secret (replaces the old one). Returns `{ secret }` |
@@ -348,6 +381,8 @@ At most the newest 1000 matches are exported. When there were more, the response
 curl -H "Authorization: Bearer $READ_KEY" -o stripe.har "http://localhost:30002/api/requests/export?bin=3f9c2a7d1e4b8c06"
 ```
 
+`POST /api/requests/:id/replay` (Admin) sends a captured request again to an allowed URL; see [Forwarding and replay](#forwarding-and-replay).
+
 `DELETE /api/requests/:id` and `DELETE /api/requests` with `{ "ids": [1, 2, 3] }` (Admin, up to 500 ids) delete requests.
 
 ### Live stream: `GET /api/stream`
@@ -381,6 +416,8 @@ See `sample.env` for a commented template.
 | `CAPTURE_RATE_LIMIT` | `300` | Max captured requests per minute per client IP |
 | `REDACT_HEADERS` | `authorization,proxy-authorization,cookie,x-api-key,x-bin-secret` | Headers stored as `[redacted]` in bins with redaction on |
 | `TRUST_PROXY` | — | Number of reverse-proxy hops in front of the service (e.g. `1`) |
+| `FORWARD_ALLOWED_HOSTS` | — | Hosts that captured requests may be forwarded or replayed to, comma-separated (`host`, `host:port`, `*.example.com`, IP). Empty switches forwarding and replay off. See [Forwarding and replay](#forwarding-and-replay) |
+| `FORWARD_TIMEOUT_MS` | `10000` | Give up on a forwarded or replayed request after this long (1000–60000) |
 | `RETENTION_DAYS` | `7` | Delete requests older than this many days, checked hourly (`0` keeps everything) |
 | `LOG_DIR` | `./logs` | Directory for log files |
 | `LOG_TO_FILE` | `true` | `false` logs to stdout only (handy in containers, where `docker logs` already collects output) |
@@ -439,6 +476,7 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 - **The server exits with `Invalid auth configuration`:** one of the required auth settings is missing, too short, or still a `change-me` placeholder. The message lists what to fix.
 - **The server exits with `Startup failed`:** usually the database connection. Check `DB_TYPE` and the connection settings in `.env`, and make sure the database server is running and reachable. To rule out the database server, set `DB_TYPE=sqlite`.
 - **A sender gets `401 Invalid bin secret`:** the bin has a secret and the request didn't include it. Add an `X-Bin-Secret` header or `Authorization: Bearer <secret>`, or `?secret=<secret>` to the URL for senders that can't set headers. If the sender uses `Authorization` for its own token, send the secret in `X-Bin-Secret`; any one of the three is enough. The secret can be shown on the **Bins** page.
+- **Forwarding or replay says it is switched off, or the target "is not in FORWARD_ALLOWED_HOSTS":** add the target's host (and port, if it has one) to `FORWARD_ALLOWED_HOSTS` and restart. Targets on `localhost` or a private address must be listed by their exact name or IP, not through a wildcard, and in Docker `localhost` is the container itself (use `host.docker.internal` or the service name).
 - **A sender gets `413`:** the body is larger than `MAX_BODY_KB`.
 - **Requests don't appear live behind a reverse proxy:** the live list uses server-sent events (`/api/stream`). Turn off response buffering for that path (nginx: `proxy_buffering off;`; the app already sends `X-Accel-Buffering: no`) and allow long-lived connections. The list still refreshes when you reload or change filters.
 - **Every client shares one rate limit behind a proxy:** set `TRUST_PROXY=1`. Without it, captured requests also show the proxy's IP instead of the sender's.
@@ -451,7 +489,6 @@ If your provider gives a connection string such as `postgres://user:pass@host:54
 
 ## Roadmap
 
-- Forward or replay a captured request to another URL (with an allowlist, to avoid SSRF)
 - Per-bin retention
 - Multiple admin users
 

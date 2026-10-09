@@ -71,7 +71,7 @@ describe('viewer sign-in', () => {
         assert.equal(res.status, 200);
         assert.equal(res.body.role, 'viewer');
         const status = await request(app).get('/auth/status').set('Cookie', cookie);
-        assert.deepEqual(status.body, { authenticated: true, authDisabled: false, username: 'alice', role: 'viewer' });
+        assert.deepEqual(status.body, { authenticated: true, authDisabled: false, username: 'alice', role: 'viewer', forwardingEnabled: false });
         assert.equal((await request(app).get('/').set('Cookie', cookie)).status, 200);
     });
 
