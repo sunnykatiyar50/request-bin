@@ -1,31 +1,63 @@
-# docker compose up --build
+# Request Bin, using the prebuilt image from GitHub Container Registry.
 #
-# All settings come from .env (see sample.env); ADMIN_PASSWORD and SESSION_SECRET are required.
-# PORT in .env picks the host port; inside the container the app always listens on 3007.
-# Requires Docker Compose 2.24 or later.
+#   cp sample.env .env      # then fill in the required values
+#   docker compose up -d
+#   docker compose pull && docker compose up -d     # update to the latest image
+#
+# Every setting comes from .env. In .env, keep SQLITE_PATH and LOG_DIR unset (or pointing inside
+# /app/data and /app/logs), otherwise the database or logs end up outside the mounted folders.
+#
+# PostgreSQL instead of SQLite: set DB_TYPE=postgres and the PG_* variables in .env. They are the
+# same for the bundled container and for any external server; only PG_HOST differs:
+#   bundled container  -> PG_HOST=postgres, start with: docker compose --profile postgres up -d
+#   Docker host        -> PG_HOST=host.docker.internal
+#   other/hosted server -> PG_HOST=<its host>, and usually PG_SSL=true for hosted databases
+# Never PG_HOST=localhost: inside the container that is the container itself.
+# Full details: README.md, "Database setup".
 services:
   request-bin:
-    build: .
-    image: request-bin:latest
+    image: ghcr.io/sunnykatiyar50/request-bin:latest
     init: true
+    user: 1000:1000
+    env_file: .env
     ports:
-      - "${PORT:-3007}:3007"
-    env_file:
-      - path: .env
-        required: false
-    # Values here override .env. They pin container-internal paths and ports, and stop Compose
-    # from starting at all when a required secret is missing.
-    environment:
-      PORT: 3007
-      DATABASE_PATH: /app/data/request-bin.sqlite
-      LOG_DIR: /app/logs
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in .env}
-      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      # The app listens on PORT from .env (30002 if unset). To listen on one interface only, prefix
+      # an address, e.g. "100.110.180.13:${PORT:-30002}:${PORT:-30002}".
+      - "${PORT:-30002}:${PORT:-30002}"
     volumes:
-      - request-bin-data:/app/data
-      - request-bin-logs:/app/logs
+      - rb-data:/app/data
+      - rb-logs:/app/logs
+      # Or bind mounts to host folders. They must be writable by UID 1000:
+      #   sudo mkdir -p ./data ./logs && sudo chown -R 1000:1000 ./data ./logs
+      # - ./data:/app/data
+      # - ./logs:/app/logs
+    # Makes host.docker.internal (the Docker host) resolvable on Linux too
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    # Only the database credentials, taken from the same PG_* values in .env that the app uses
+    environment:
+      POSTGRES_USER: ${PG_USER:-requestbin}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-}
+      POSTGRES_DB: ${PG_DATABASE:-requestbin}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
 volumes:
-  request-bin-data:
-  request-bin-logs:
+  rb-data:
+  rb-logs:
+  pg-data:

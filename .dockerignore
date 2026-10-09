@@ -1,9 +1,8 @@
 node_modules
+npm-debug.log
 .env
 *.sqlite
-data
 logs
-test
 .git
 .gitignore
 .idea
@@ -12,3 +11,5 @@ Dockerfile
 docker-compose.yml
 .dockerignore
 README.md
+test
+.github

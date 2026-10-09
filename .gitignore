@@ -1,10 +1,10 @@
-node_modules/
-logs/
-data/
+node_modules/*
+/* .DS_Store */
+.vscode/*
+*.log
 *.sqlite
-*.sqlite-*
 .env
 !sample.env
-.idea/
-.vscode/
-.DS_Store
+/.idea/
+/.vscode/
+*.sqlite-*

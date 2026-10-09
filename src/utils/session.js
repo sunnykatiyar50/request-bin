@@ -6,21 +6,22 @@ function sign(data, secret) {
     return crypto.createHmac('sha256', secret).update(data).digest('base64url');
 }
 
-function createSessionToken(secret, ttlMs) {
-    const payload = Buffer.from(JSON.stringify({ exp: Date.now() + ttlMs })).toString('base64url');
+function createSessionToken(secret, ttlMs, data = {}) {
+    const payload = Buffer.from(JSON.stringify({ ...data, exp: Date.now() + ttlMs })).toString('base64url');
     return `${payload}.${sign(payload, secret)}`;
 }
 
+// Returns the token's payload when the signature is valid and it hasn't expired, otherwise null
 function verifySessionToken(token, secret) {
-    if (typeof token !== 'string') return false;
+    if (typeof token !== 'string') return null;
     const [payload, signature] = token.split('.');
-    if (!payload || !signature) return false;
-    if (!safeEqual(signature, sign(payload, secret))) return false;
+    if (!payload || !signature) return null;
+    if (!safeEqual(signature, sign(payload, secret))) return null;
     try {
-        const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-        return typeof exp === 'number' && exp > Date.now();
+        const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+        return typeof data.exp === 'number' && data.exp > Date.now() ? data : null;
     } catch {
-        return false;
+        return null;
     }
 }
 
