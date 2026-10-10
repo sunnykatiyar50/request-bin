@@ -167,17 +167,9 @@
                             <span id="detailMethod" class="method-badge"></span>
                             <h2 id="detailPath" class="detail-path"></h2>
                         </div>
-                        <dl class="detail-meta">
-                            <dt>Bin</dt><dd id="detailBin"></dd>
-                            <dt>Received</dt><dd id="detailTime"></dd>
-                            <dt>From</dt><dd id="detailIp" class="mono"></dd>
-                            <dt>Content type</dt><dd id="detailContentType" class="mono"></dd>
-                            <dt>Size</dt><dd id="detailSize"></dd>
-                        </dl>
                         <div class="detail-actions">
                             <button type="button" id="copyUrlButton" class="ghost small">Copy URL</button>
                             <button type="button" id="copyCurlButton" class="ghost small">Copy as cURL</button>
-                            <button type="button" id="copyBodyButton" class="ghost small">Copy body</button>
                             <button type="button" id="replayButton" class="ghost small admin-only hidden">Replay…</button>
                         </div>
                         <div id="replayPanel" class="replay-panel admin-only hidden">
@@ -190,30 +182,55 @@
                             <pre id="replayResult" class="replay-result hidden"></pre>
                         </div>
 
-                        <section class="detail-section">
-                            <div class="body-toolbar">
-                                <h3>Body <span id="formatBadge" class="format-badge" title="Detected format"></span></h3>
-                                <div id="viewSwitch" class="segmented" role="group" aria-label="Body view"></div>
-                            </div>
-                            <div id="detailBodyContent" class="message-body"></div>
-                        </section>
-                        <section class="detail-section">
-                            <h3>Query <span id="queryCount" class="count-badge"></span></h3>
-                            <div id="detailQuery"></div>
-                        </section>
-                        <section class="detail-section">
-                            <h3>Headers <span id="headerCount" class="count-badge"></span></h3>
+                        <div class="detail-tabs" role="tablist" aria-label="Request details">
+                            <button type="button" role="tab" id="tabRequest" class="detail-tab" data-detail-tab="request" aria-controls="panelRequest">Request</button>
+                            <button type="button" role="tab" id="tabBody" class="detail-tab" data-detail-tab="body" aria-controls="panelBody">Body</button>
+                            <button type="button" role="tab" id="tabHeaders" class="detail-tab" data-detail-tab="headers" aria-controls="panelHeaders">Headers <span id="headerCount" class="count-badge"></span></button>
+                            <button type="button" role="tab" id="tabResponse" class="detail-tab" data-detail-tab="response" aria-controls="panelResponse">Response <span id="responseTabBadge" class="count-badge"></span></button>
+                        </div>
+
+                        <div id="panelRequest" class="detail-panel" role="tabpanel" aria-labelledby="tabRequest" data-detail-panel="request">
+                            <dl class="detail-meta">
+                                <dt>Bin</dt><dd id="detailBin"></dd>
+                                <dt>Received</dt><dd id="detailTime"></dd>
+                                <dt>From</dt><dd id="detailIp" class="mono"></dd>
+                                <dt>Content type</dt><dd id="detailContentType" class="mono"></dd>
+                                <dt>Size</dt><dd id="detailSize"></dd>
+                            </dl>
+                            <section class="detail-section">
+                                <h3>Query <span id="queryCount" class="count-badge"></span></h3>
+                                <div id="detailQuery"></div>
+                            </section>
+                        </div>
+
+                        <div id="panelBody" class="detail-panel" role="tabpanel" aria-labelledby="tabBody" data-detail-panel="body">
+                            <section class="detail-section">
+                                <div class="body-toolbar">
+                                    <h3>Body <span id="formatBadge" class="format-badge" title="Detected format"></span></h3>
+                                    <div class="body-tools">
+                                        <div id="viewSwitch" class="segmented" role="group" aria-label="Body view"></div>
+                                        <button type="button" id="copyBodyButton" class="ghost small">Copy body</button>
+                                    </div>
+                                </div>
+                                <div id="detailBodyContent" class="message-body"></div>
+                            </section>
+                        </div>
+
+                        <div id="panelHeaders" class="detail-panel" role="tabpanel" aria-labelledby="tabHeaders" data-detail-panel="headers">
                             <div id="detailHeaders"></div>
-                        </section>
-                        <section id="detailResponseSection" class="detail-section">
-                            <h3>Response sent <span id="responseStatus" class="count-badge"></span> <span id="responseRule" class="muted"></span></h3>
-                            <div id="detailResponseNone" class="muted hidden">Not recorded (captured before responses were stored).</div>
-                            <div id="detailResponseContent" class="message-body"></div>
-                        </section>
-                        <section id="detailForwardSection" class="detail-section hidden">
-                            <h3>Forwarded</h3>
-                            <div id="detailForward"></div>
-                        </section>
+                        </div>
+
+                        <div id="panelResponse" class="detail-panel" role="tabpanel" aria-labelledby="tabResponse" data-detail-panel="response">
+                            <section id="detailResponseSection" class="detail-section">
+                                <h3>Response sent <span id="responseStatus" class="count-badge"></span> <span id="responseRule" class="muted"></span></h3>
+                                <div id="detailResponseNone" class="muted hidden">Not recorded (captured before responses were stored).</div>
+                                <div id="detailResponseContent" class="message-body"></div>
+                            </section>
+                            <section id="detailForwardSection" class="detail-section hidden">
+                                <h3>Forwarded</h3>
+                                <div id="detailForward"></div>
+                            </section>
+                        </div>
                     </div>
                 </aside>
             </div>

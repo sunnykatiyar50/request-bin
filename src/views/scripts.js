@@ -477,6 +477,43 @@ function kvTable(rows, emptyText) {
     return table;
 }
 
+// --- Detail pane tabs ---
+
+const DETAIL_TABS = ['request', 'body', 'headers', 'response'];
+let activeDetailTab = readSetting('rb_detail_tab', 'body');
+if (!DETAIL_TABS.includes(activeDetailTab)) activeDetailTab = 'body';
+
+// Shows one tab's panel; the choice is remembered, so it stays while moving between requests
+function setDetailTab(name, { focus = false } = {}) {
+    if (!DETAIL_TABS.includes(name)) return;
+    activeDetailTab = name;
+    saveSetting('rb_detail_tab', name);
+    document.querySelectorAll('.detail-tab').forEach(tab => {
+        const selected = tab.dataset.detailTab === name;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        if (selected && focus) tab.focus();
+    });
+    document.querySelectorAll('[data-detail-panel]').forEach(panel => {
+        panel.classList.toggle('hidden', panel.dataset.detailPanel !== name);
+    });
+}
+
+function initDetailTabs() {
+    document.querySelectorAll('.detail-tab').forEach(tab => {
+        tab.addEventListener('click', () => setDetailTab(tab.dataset.detailTab));
+    });
+    // Arrow keys, Home and End move between the tabs
+    document.querySelector('.detail-tabs').addEventListener('keydown', event => {
+        const index = DETAIL_TABS.indexOf(activeDetailTab);
+        const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: DETAIL_TABS.length - 1 }[event.key];
+        if (target === undefined) return;
+        event.preventDefault();
+        setDetailTab(DETAIL_TABS[(target + DETAIL_TABS.length) % DETAIL_TABS.length], { focus: true });
+    });
+    setDetailTab(activeDetailTab);
+}
+
 function showDetails(detail) {
     selectedDetail = detail;
     $('detailEmpty').classList.toggle('hidden', Boolean(detail));
@@ -509,6 +546,7 @@ function showDetails(detail) {
 function renderResponse(response) {
     $('detailResponseNone').classList.toggle('hidden', Boolean(response));
     $('detailResponseContent').classList.toggle('hidden', !response);
+    $('responseTabBadge').textContent = response ? response.status : '';
     $('responseStatus').textContent = response ? `${response.status}${response.contentType ? ` · ${response.contentType}` : ''}` : '';
     $('responseRule').textContent = response && response.ruleName ? `rule: ${response.ruleName}` : '';
     if (!response) return;
@@ -1517,6 +1555,7 @@ window.addEventListener('DOMContentLoaded', () => {
     $('newBinButton').addEventListener('click', () => openBinForm());
     $('cancelBinButton').addEventListener('click', closeBinForm);
     buildForwardMethods();
+    initDetailTabs();
     $('binForwardEnabled').addEventListener('change', updateForwardSummary);
     const replayMethod = $('replayMethod');
     replayMethod.appendChild(new Option('Same method', ''));
