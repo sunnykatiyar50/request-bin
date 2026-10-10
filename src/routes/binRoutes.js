@@ -3,7 +3,7 @@ const { isBinId, parseBinSettings, badRequest } = require('../middleware/validat
 const { logToFile } = require('../utils/logger');
 
 // /api/bins: anyone who can read (admin, viewer, Read key) can list bins; only admins change them
-function createBinRoutes({ binModel, requestModel, auth }) {
+function createBinRoutes({ binModel, requestModel, auth, outbound }) {
     const router = express.Router();
 
     async function loadBin(req, res, next) {
@@ -18,16 +18,31 @@ function createBinRoutes({ binModel, requestModel, auth }) {
         next();
     };
 
+    // The forward URL can carry a token, so only admins see it; others learn only that forwarding is set up
+    const forAudience = (bin, req) => (req.auth && req.auth.isAdmin
+        ? bin
+        : { ...bin, forwardConfig: { ...bin.forwardConfig, url: bin.forwardConfig.url ? '[hidden]' : '' } });
+
+    // Forwarding to a target the server doesn't allow is refused when it is switched on
+    const forwardProblem = settings => {
+        const config = settings.forwardConfig;
+        if (!config || !config.enabled) return null;
+        const check = outbound.checkUrl(config.url);
+        return check.ok ? null : { 'forwardConfig.url': check.reason };
+    };
+
     router.get('/', auth.requireRead, async (req, res) => {
-        res.json({ bins: await binModel.list() });
+        res.json({ bins: (await binModel.list()).map(bin => forAudience(bin, req)) });
     });
 
-    router.get('/:id', auth.requireRead, loadBin, (req, res) => res.json(req.bin));
+    router.get('/:id', auth.requireRead, loadBin, (req, res) => res.json(forAudience(req.bin, req)));
 
     router.post('/', auth.requireAdmin, noStore, async (req, res) => {
         const body = req.body || {};
         const { settings, errors } = parseBinSettings(body);
         if (errors) return badRequest(res, errors);
+        const forwardErrors = forwardProblem(settings);
+        if (forwardErrors) return badRequest(res, forwardErrors);
         if (body.withSecret !== undefined && typeof body.withSecret !== 'boolean') {
             return badRequest(res, { withSecret: 'must be true or false' });
         }
@@ -39,6 +54,8 @@ function createBinRoutes({ binModel, requestModel, auth }) {
     router.patch('/:id', auth.requireAdmin, loadBin, async (req, res) => {
         const { settings, errors } = parseBinSettings(req.body || {});
         if (errors) return badRequest(res, errors);
+        const forwardErrors = forwardProblem(settings);
+        if (forwardErrors) return badRequest(res, forwardErrors);
         res.json(await binModel.update(req.bin.id, settings));
     });
 

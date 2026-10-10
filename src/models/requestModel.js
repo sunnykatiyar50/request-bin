@@ -41,12 +41,22 @@ function toSummary(row) {
     };
 }
 
+function parseForwardResult(value) {
+    if (!value) return null;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return null;
+    }
+}
+
 function toDetail(row) {
     return {
         ...toSummary(row),
         headers: JSON.parse(row.headers),
         query: [...new URLSearchParams(row.query_string)].map(([name, value]) => ({ name, value })),
         ...encodeBody(row.body),
+        forward: parseForwardResult(row.forward_result),
         response: row.response_status === null || row.response_status === undefined ? null : {
             status: Number(row.response_status),
             contentType: row.response_content_type || null,
@@ -94,6 +104,18 @@ class RequestModel {
             'UPDATE requests SET response_status = ?, response_content_type = ?, response_body = ?, rule_name = ? WHERE id = ?',
             [status, contentType, String(body ?? '').slice(0, MAX_STORED_RESPONSE), ruleName || null, id]
         );
+    }
+
+    // What automatic forwarding did with a request: { target, status, statusText, durationMs } or { target, error }
+    async setForwardResult(id, result) {
+        await this.db.run('UPDATE requests SET forward_result = ? WHERE id = ?', [JSON.stringify(result), id]);
+    }
+
+    // A captured request as it was sent, for forwarding or replaying it: { binId, method, headers, body (Buffer) }
+    async getRaw(id) {
+        const [row] = await this.db.all('SELECT bin_id, method, headers, body FROM requests WHERE id = ?', [id]);
+        if (!row) return null;
+        return { binId: row.bin_id, method: row.method, headers: JSON.parse(row.headers), body: row.body ? Buffer.from(row.body) : Buffer.alloc(0) };
     }
 
     buildFilters({ ids, binId, method, search, from, to } = {}) {

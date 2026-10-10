@@ -11,7 +11,7 @@ const REDACTED = '[redacted]';
 
 // Captures any request sent to /b/:binId or /b/:binId/<anything> and answers with the bin's
 // configured response. Public by design (webhook senders can't log in); a bin can require a secret.
-function createCaptureRoutes({ binModel, requestModel, config }) {
+function createCaptureRoutes({ binModel, requestModel, config, forwarder }) {
     const router = express.Router();
 
     const limiter = rateLimit({
@@ -116,6 +116,9 @@ function createCaptureRoutes({ binModel, requestModel, config }) {
             'Content-Type': response.contentType,
         });
         res.status(response.status).send(responseBody);
+
+        // Passed on after the sender has its answer; failures are recorded on the request
+        if (forwarder) forwarder.forward(bin, { id: summary.id, method: req.method, headers, body });
     }
 
     router.all(['/:binId', '/:binId/*rest'], limiter, loadBin, rawBody, capture);

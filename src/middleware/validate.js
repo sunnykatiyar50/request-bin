@@ -205,6 +205,41 @@ function parseRules(value, errors) {
     return Object.keys(errors).length > before ? undefined : rules;
 }
 
+// Forwarding: { enabled?, url?, methods? }. The url is checked against the server's allowlist by the route.
+function parseForwardConfig(value, errors) {
+    if (!isPlainObject(value)) {
+        errors.forwardConfig = 'must be an object, or null to remove it';
+        return undefined;
+    }
+    const before = Object.keys(errors).length;
+    const config = { enabled: false, url: '', methods: [] };
+    if (value.enabled !== undefined) {
+        if (typeof value.enabled !== 'boolean') errors['forwardConfig.enabled'] = 'must be true or false';
+        else config.enabled = value.enabled;
+    }
+    if (value.url !== undefined && value.url !== '') {
+        if (typeof value.url !== 'string' || value.url.length > 2048) errors['forwardConfig.url'] = 'must be a URL of at most 2048 characters';
+        else {
+            try {
+                const url = new URL(value.url);
+                if (url.protocol !== 'http:' && url.protocol !== 'https:') errors['forwardConfig.url'] = 'must start with http:// or https://';
+                else if (url.username || url.password) errors['forwardConfig.url'] = 'must not contain a user name or password';
+                else config.url = value.url.trim();
+            } catch {
+                errors['forwardConfig.url'] = 'is not a valid URL';
+            }
+        }
+    }
+    if (config.enabled && !config.url && !errors['forwardConfig.url']) errors['forwardConfig.url'] = 'is needed to forward';
+    if (value.methods !== undefined) {
+        const methods = Array.isArray(value.methods) ? value.methods.map(m => (typeof m === 'string' ? m.toUpperCase() : '')) : null;
+        if (!methods || methods.length > METHODS.length || methods.some(m => !METHODS.includes(m))) {
+            errors['forwardConfig.methods'] = `must be a list of ${METHODS.join(', ')}`;
+        } else config.methods = [...new Set(methods)];
+    }
+    return Object.keys(errors).length > before ? undefined : config;
+}
+
 // Bin settings in a create/update body; returns { settings } or { errors }
 function parseBinSettings(body = {}) {
     const errors = {};
@@ -245,6 +280,13 @@ function parseBinSettings(body = {}) {
     if (body.responseRules !== undefined) {
         const rules = parseRules(body.responseRules, errors);
         if (rules) settings.responseRules = rules;
+    }
+    if (body.forwardConfig !== undefined) {
+        if (body.forwardConfig === null) settings.forwardConfig = null;
+        else {
+            const config = parseForwardConfig(body.forwardConfig, errors);
+            if (config) settings.forwardConfig = config;
+        }
     }
     return Object.keys(errors).length ? { errors } : { settings };
 }

@@ -178,6 +178,16 @@
                             <button type="button" id="copyUrlButton" class="ghost small">Copy URL</button>
                             <button type="button" id="copyCurlButton" class="ghost small">Copy as cURL</button>
                             <button type="button" id="copyBodyButton" class="ghost small">Copy body</button>
+                            <button type="button" id="replayButton" class="ghost small admin-only hidden">Replay…</button>
+                        </div>
+                        <div id="replayPanel" class="replay-panel admin-only hidden">
+                            <div class="replay-line">
+                                <select id="replayMethod" aria-label="Method"></select>
+                                <input type="url" id="replayUrl" maxlength="2048" placeholder="https://api.example.com/webhook" autocomplete="off" aria-label="Replay to" />
+                                <button type="button" id="replaySend" class="primary small">Send</button>
+                            </div>
+                            <p id="replayStatus" class="form-status"></p>
+                            <pre id="replayResult" class="replay-result hidden"></pre>
                         </div>
 
                         <section class="detail-section">
@@ -199,6 +209,10 @@
                             <h3>Response sent <span id="responseStatus" class="count-badge"></span> <span id="responseRule" class="muted"></span></h3>
                             <div id="detailResponseNone" class="muted hidden">Not recorded (captured before responses were stored).</div>
                             <div id="detailResponseContent" class="message-body"></div>
+                        </section>
+                        <section id="detailForwardSection" class="detail-section hidden">
+                            <h3>Forwarded</h3>
+                            <div id="detailForward"></div>
                         </section>
                     </div>
                 </aside>
@@ -263,6 +277,18 @@
                         <p class="hint">Rules are checked from the top. The first rule whose conditions all match decides the response; any other request gets the response above. Use <code>*</code> as a wildcard in paths and values. A header, query or body condition without a value only needs the field to be present.</p>
                         <div id="binRules" class="rules-list"></div>
                         <button type="button" id="addRuleButton" class="ghost small">Add rule</button>
+                    </details>
+                    <details class="field-wide forward-editor" id="binForwardDetails">
+                        <summary id="binForwardSummary">Forwarding</summary>
+                        <p id="binForwardOff" class="hint hidden">Forwarding is switched off on this server. Set <code>FORWARD_ALLOWED_HOSTS</code> to the hosts requests may be sent to, then restart.</p>
+                        <p class="hint">Pass every request this bin captures on to another URL, as it was sent: same method and body, and the same headers except the hidden ones. The sender's answer isn't affected, and the outcome shows on each request.</p>
+                        <label class="check-label"><input type="checkbox" id="binForwardEnabled" /> <span>Forward captured requests</span></label>
+                        <div class="field">
+                            <label for="binForwardUrl">Forward to</label>
+                            <input type="url" id="binForwardUrl" maxlength="2048" placeholder="https://api.example.com/webhook" autocomplete="off" />
+                        </div>
+                        <div id="binForwardMethods" class="forward-methods" role="group" aria-label="Methods to forward"></div>
+                        <p class="hint">With no method ticked, all methods are forwarded.</p>
                     </details>
                 </div>
                 <label class="check-label"><input type="checkbox" id="binRedactInput" checked /> Hide sensitive headers (Authorization, Cookie, X-API-Key…) when storing requests</label>

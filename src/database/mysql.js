@@ -29,6 +29,7 @@ async function connect() {
             response_template TINYINT(1) NOT NULL DEFAULT 0,
             response_delay_ms INT NOT NULL DEFAULT 0,
             response_rules TEXT,
+            forward_config TEXT,
             created_at DATETIME(3) NOT NULL
         ) DEFAULT CHARSET = utf8mb4
     `);
@@ -42,6 +43,7 @@ async function connect() {
         ['response_template', 'TINYINT(1) NOT NULL DEFAULT 0'],
         ['response_delay_ms', 'INT NOT NULL DEFAULT 0'],
         ['response_rules', 'TEXT'],
+        ['forward_config', 'TEXT'],
     ]) {
         if (!existing.includes(name)) await pool.query(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
     }
@@ -63,6 +65,7 @@ async function connect() {
             response_content_type VARCHAR(64),
             response_body MEDIUMTEXT,
             rule_name VARCHAR(100),
+            forward_result TEXT,
             INDEX idx_requests_bin (bin_id, id),
             INDEX idx_requests_created (created_at)
         ) DEFAULT CHARSET = utf8mb4
@@ -76,6 +79,7 @@ async function connect() {
         ['response_content_type', 'VARCHAR(64)'],
         ['response_body', 'MEDIUMTEXT'],
         ['rule_name', 'VARCHAR(100)'],
+        ['forward_result', 'TEXT'],
     ]) {
         if (!existingRequestColumns.includes(name)) await pool.query(`ALTER TABLE requests ADD COLUMN ${name} ${definition}`);
     }

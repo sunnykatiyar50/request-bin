@@ -1,12 +1,15 @@
 const express = require('express');
-const { validateRequestQuery, validateExportQuery, validateIdParam, validateIdList, isBinId } = require('../middleware/validate');
+const { validateRequestQuery, validateExportQuery, validateIdParam, validateIdList, isBinId, badRequest, METHODS } = require('../middleware/validate');
 const { subscribe } = require('../events');
 const { toHar } = require('../utils/har');
+const { forwardHeaders } = require('../utils/outbound');
+const { logToFile } = require('../utils/logger');
+const { describeTarget } = require('../utils/forward');
 
 const EXPORT_LIMIT = 1000;
 
 // /api/requests: reading needs a Read key, a viewer or an admin; deleting needs an admin
-function createRequestRoutes({ requestModel, auth }) {
+function createRequestRoutes({ requestModel, auth, outbound }) {
     const router = express.Router();
 
     router.get('/', auth.requireRead, validateRequestQuery, async (req, res) => {
@@ -42,6 +45,48 @@ function createRequestRoutes({ requestModel, auth }) {
         const request = await requestModel.get(req.validated.ids[0]);
         if (!request) return res.status(404).json({ error: 'Request not found' });
         res.json(request);
+    });
+
+    // Sends a captured request again, to a target on the server's allowlist (FORWARD_ALLOWED_HOSTS).
+    // Body: { url, method? } (the method defaults to the original). Answers with what the target replied.
+    router.post('/:id/replay', auth.requireAdmin, validateIdParam, async (req, res) => {
+        if (!outbound.enabled) {
+            return res.status(400).json({ error: 'Replay is switched off. Set FORWARD_ALLOWED_HOSTS to the hosts requests may be sent to.' });
+        }
+        const { url, method } = req.body || {};
+        const errors = {};
+        if (typeof url !== 'string' || url === '') errors.url = 'must be a URL';
+        else {
+            const check = outbound.checkUrl(url);
+            if (!check.ok) errors.url = check.reason;
+        }
+        if (method !== undefined && !METHODS.includes(typeof method === 'string' ? method.toUpperCase() : '')) {
+            errors.method = `must be one of ${METHODS.join(', ')}`;
+        }
+        if (Object.keys(errors).length) return badRequest(res, errors);
+
+        const original = await requestModel.getRaw(req.validated.ids[0]);
+        if (!original) return res.status(404).json({ error: 'Request not found' });
+        const target = describeTarget(url);
+        try {
+            const response = await outbound.send(url, {
+                method: method ? method.toUpperCase() : original.method,
+                headers: forwardHeaders(original.headers, { binId: original.binId }),
+                body: original.body,
+            });
+            logToFile(`Request ${req.validated.ids[0]} replayed to ${target} from ${req.ip}: ${response.status}`);
+            res.set('Cache-Control', 'no-store').json({
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                body: response.body.toString('utf8'),
+                truncated: response.truncated,
+                durationMs: response.durationMs,
+            });
+        } catch (err) {
+            logToFile(`Replaying request ${req.validated.ids[0]} to ${target} from ${req.ip} failed: ${err.message}`);
+            res.status(502).json({ error: `Could not reach the target: ${err.message}` });
+        }
     });
 
     router.delete('/', auth.requireAdmin, validateIdList, async (req, res) => {

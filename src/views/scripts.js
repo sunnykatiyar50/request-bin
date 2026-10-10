@@ -282,6 +282,8 @@ async function loadSession() {
         const response = await fetch('/auth/status');
         const status = await response.json();
         userRole = status.role === 'viewer' ? 'viewer' : 'admin';
+        forwardingEnabled = Boolean(status.forwardingEnabled);
+        $('replayButton').classList.toggle('hidden', !forwardingEnabled);
         const name = status.username || (status.authDisabled ? 'No sign-in' : 'admin');
         $('currentUser').textContent = userRole === 'viewer' ? `${name} (viewer)` : name;
         $('authWarning').classList.toggle('hidden', !status.authDisabled);
@@ -499,6 +501,8 @@ function showDetails(detail) {
     $('headerCount').textContent = headers.length || '';
     $('detailHeaders').replaceChildren(kvTable(headers, 'No headers'));
     renderResponse(detail.response);
+    renderForward(detail.forward);
+    resetReplay();
 }
 
 // The response the bin sent for this request: status, the rule that chose it, and the body
@@ -776,6 +780,95 @@ async function deleteSelectedRequests() {
     await reloadCurrentPage();
 }
 
+// --- Forwarding (in the bin form) and replay (in the detail pane) ---
+
+let forwardingEnabled = false; // the server has FORWARD_ALLOWED_HOSTS set
+
+function buildForwardMethods() {
+    const box = $('binForwardMethods');
+    for (const method of RULE_METHODS) {
+        const label = el('label', 'check-label');
+        const input = el('input');
+        input.type = 'checkbox';
+        input.value = method;
+        label.appendChild(input);
+        label.appendChild(el('span', null, method));
+        box.appendChild(label);
+    }
+}
+
+function updateForwardSummary() {
+    $('binForwardSummary').textContent = $('binForwardEnabled').checked ? 'Forwarding (on)' : 'Forwarding';
+}
+
+function fillForwardForm(bin) {
+    const config = bin ? bin.forwardConfig : { enabled: false, url: '', methods: [] };
+    $('binForwardEnabled').checked = config.enabled;
+    $('binForwardUrl').value = config.url;
+    $('binForwardMethods').querySelectorAll('input').forEach(input => { input.checked = config.methods.includes(input.value); });
+    $('binForwardOff').classList.toggle('hidden', forwardingEnabled);
+    $('binForwardDetails').open = config.enabled;
+    updateForwardSummary();
+}
+
+function readForwardForm() {
+    return {
+        enabled: $('binForwardEnabled').checked,
+        url: $('binForwardUrl').value.trim(),
+        methods: [...$('binForwardMethods').querySelectorAll('input:checked')].map(input => input.value),
+    };
+}
+
+// What automatic forwarding did with the selected request
+function renderForward(forward) {
+    $('detailForwardSection').classList.toggle('hidden', !forward);
+    if (!forward) return;
+    const line = forward.error
+        ? el('p', 'form-status error', `Could not forward to ${forward.target}: ${forward.error}`)
+        : el('p', null, `Forwarded to ${forward.target}: ${forward.status} ${forward.statusText} in ${forward.durationMs} ms`);
+    $('detailForward').replaceChildren(line);
+}
+
+function resetReplay() {
+    $('replayPanel').classList.add('hidden');
+    $('replayStatus').textContent = '';
+    $('replayStatus').classList.remove('error');
+    $('replayResult').classList.add('hidden');
+}
+
+async function sendReplay() {
+    if (!selectedDetail) return;
+    const url = $('replayUrl').value.trim();
+    const status = $('replayStatus');
+    const result = $('replayResult');
+    result.classList.add('hidden');
+    status.classList.remove('error');
+    if (!url) {
+        status.classList.add('error');
+        status.textContent = 'Enter the URL to send the request to.';
+        return;
+    }
+    saveSetting('rb_replay_url', url);
+    $('replaySend').disabled = true;
+    status.textContent = 'Sending…';
+    try {
+        const body = { url, ...($('replayMethod').value && { method: $('replayMethod').value }) };
+        const { response, data } = await apiJson(`/api/requests/${selectedDetail.id}/replay`, { method: 'POST', body: JSON.stringify(body) });
+        if (!response.ok) {
+            status.classList.add('error');
+            status.textContent = data.details
+                ? Object.entries(data.details).map(([field, msg]) => `${field} ${msg}.`).join(' ')
+                : data.error || 'Could not replay the request.';
+            return;
+        }
+        status.textContent = `${data.status} ${data.statusText} in ${data.durationMs} ms${data.truncated ? ' (reply cut short)' : ''}`;
+        result.textContent = data.body.length > 4000 ? `${data.body.slice(0, 4000)}\n… (${data.body.length - 4000} more characters)` : data.body;
+        result.classList.toggle('hidden', data.body === '');
+    } finally {
+        $('replaySend').disabled = false;
+    }
+}
+
 // --- Bins page ---
 
 // --- Response rules editor (in the bin form) ---
@@ -932,6 +1025,7 @@ function binResponseSummary(bin) {
         bin.responseContentType,
         ...(bin.responseTemplate ? ['templated'] : []),
         ...(bin.responseDelayMs ? [`${bin.responseDelayMs} ms delay`] : []),
+        ...(bin.forwardConfig.enabled ? ['forwards'] : []),
         ...(bin.responseRules.length ? [`${bin.responseRules.length} rule${bin.responseRules.length === 1 ? '' : 's'}`] : []),
     ].join(' · ');
 }
@@ -1005,6 +1099,7 @@ function openBinForm(bin = null) {
     $('binTemplateInput').checked = bin ? bin.responseTemplate : false;
     $('binDelayInput').value = bin ? bin.responseDelayMs : 0;
     renderRules(bin ? bin.responseRules : []);
+    fillForwardForm(bin);
     $('binRedactInput').checked = bin ? bin.redactHeaders : true;
     $('binSecretInput').checked = false;
     // New bins: a checkbox. Existing bins: add / replace / remove buttons
@@ -1053,6 +1148,7 @@ async function saveBin(event) {
         responseTemplate: $('binTemplateInput').checked,
         responseDelayMs: Number($('binDelayInput').value) || 0,
         responseRules: readRules(),
+        forwardConfig: readForwardForm(),
         redactHeaders: $('binRedactInput').checked,
     };
     if (editingBin && !settings.name) {
@@ -1420,6 +1516,23 @@ window.addEventListener('DOMContentLoaded', () => {
     // Bins
     $('newBinButton').addEventListener('click', () => openBinForm());
     $('cancelBinButton').addEventListener('click', closeBinForm);
+    buildForwardMethods();
+    $('binForwardEnabled').addEventListener('change', updateForwardSummary);
+    const replayMethod = $('replayMethod');
+    replayMethod.appendChild(new Option('Same method', ''));
+    RULE_METHODS.forEach(method => replayMethod.appendChild(new Option(method, method)));
+    $('replayButton').addEventListener('click', () => {
+        const panel = $('replayPanel');
+        panel.classList.toggle('hidden');
+        if (!panel.classList.contains('hidden')) {
+            if (!$('replayUrl').value) $('replayUrl').value = readSetting('rb_replay_url', '');
+            $('replayUrl').focus();
+        }
+    });
+    $('replaySend').addEventListener('click', sendReplay);
+    $('replayUrl').addEventListener('keydown', event => {
+        if (event.key === 'Enter') sendReplay();
+    });
     $('addRuleButton').addEventListener('click', () => {
         $('binRules').appendChild(ruleCard());
         renumberRules();

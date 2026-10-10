@@ -32,6 +32,7 @@ async function connect() {
             response_template BOOLEAN NOT NULL DEFAULT FALSE,
             response_delay_ms INTEGER NOT NULL DEFAULT 0,
             response_rules TEXT,
+            forward_config TEXT,
             created_at TIMESTAMPTZ NOT NULL
         )
     `);
@@ -39,6 +40,7 @@ async function connect() {
     await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS response_template BOOLEAN NOT NULL DEFAULT FALSE');
     await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS response_delay_ms INTEGER NOT NULL DEFAULT 0');
     await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS response_rules TEXT');
+    await pool.query('ALTER TABLE bins ADD COLUMN IF NOT EXISTS forward_config TEXT');
     await pool.query(`
         CREATE TABLE IF NOT EXISTS requests (
             id SERIAL PRIMARY KEY,
@@ -56,7 +58,8 @@ async function connect() {
             response_status INTEGER,
             response_content_type VARCHAR(64),
             response_body TEXT,
-            rule_name VARCHAR(100)
+            rule_name VARCHAR(100),
+            forward_result TEXT
         )
     `);
     // Columns added after the first release, for databases created before them
@@ -64,6 +67,7 @@ async function connect() {
     await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_content_type VARCHAR(64)');
     await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS response_body TEXT');
     await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS rule_name VARCHAR(100)');
+    await pool.query('ALTER TABLE requests ADD COLUMN IF NOT EXISTS forward_result TEXT');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_requests_bin ON requests (bin_id, id)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_requests_created ON requests (created_at)');
     await pool.query(`

@@ -20,6 +20,8 @@ function parseUsers(raw) {
 const USERNAME_RE = /^[A-Za-z0-9._@-]{1,64}$/;
 const MAX_BODY_KB_LIMIT = 16 * 1024; // the largest body column (MySQL MEDIUMBLOB) holds 16 MB
 
+const { parseAllowedHosts } = require('./utils/outbound');
+
 function toInt(value, fallback) {
     const n = parseInt(value, 10);
     return Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -42,6 +44,9 @@ function loadConfig(env = process.env) {
         maxBodyBytes: Math.min(toInt(env.MAX_BODY_KB, 1024), MAX_BODY_KB_LIMIT) * 1024,
         maxRequestsPerBin: toInt(env.MAX_REQUESTS_PER_BIN, 500),
         captureRateLimit: toInt(env.CAPTURE_RATE_LIMIT, 300),
+        // Forwarding and replaying captured requests: only to these hosts (empty = switched off)
+        forwardAllowedHosts: parseAllowedHosts(env.FORWARD_ALLOWED_HOSTS),
+        forwardTimeoutMs: Math.min(Math.max(toInt(env.FORWARD_TIMEOUT_MS, 10000), 1000), 60000),
         // Header values replaced with "[redacted]" before storing, in bins with redaction on
         redactHeaders: (env.REDACT_HEADERS || 'authorization,proxy-authorization,cookie,x-api-key,x-bin-secret')
             .split(',')

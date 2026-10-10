@@ -8,6 +8,8 @@ const createBinRoutes = require('./routes/binRoutes');
 const { createRequestRoutes, createStreamRoute } = require('./routes/requestRoutes');
 const createApiKeyRoutes = require('./routes/apiKeyRoutes');
 const { logToFile } = require('./utils/logger');
+const { createOutbound } = require('./utils/outbound');
+const { createForwarder } = require('./utils/forward');
 
 const viewsDir = path.join(__dirname, 'views');
 
@@ -15,6 +17,8 @@ const viewsDir = path.join(__dirname, 'views');
 function createApp({ config, binModel, requestModel, apiKeyModel }) {
     const app = express();
     const auth = createAuth(config, { apiKeyModel });
+    const outbound = createOutbound({ allowedHosts: config.forwardAllowedHosts || [], timeoutMs: config.forwardTimeoutMs });
+    const forwarder = createForwarder({ outbound, requestModel });
 
     if (config.trustProxy) {
         // e.g. TRUST_PROXY=1 behind one reverse proxy, so req.ip / req.secure reflect the real client
@@ -39,7 +43,7 @@ function createApp({ config, binModel, requestModel, apiKeyModel }) {
         })
     );
     // Public capture endpoint: reads raw bodies of any type, so it comes before the JSON parser
-    app.use('/b', createCaptureRoutes({ binModel, requestModel, config }));
+    app.use('/b', createCaptureRoutes({ binModel, requestModel, config, forwarder }));
 
     app.use(express.json({ limit: '100kb' }));
 
@@ -64,8 +68,8 @@ function createApp({ config, binModel, requestModel, apiKeyModel }) {
     app.post('/auth/logout', auth.logout);
     app.get('/auth/status', auth.status);
 
-    app.use('/api/bins', createBinRoutes({ binModel, requestModel, auth }));
-    app.use('/api/requests', createRequestRoutes({ requestModel, auth }));
+    app.use('/api/bins', createBinRoutes({ binModel, requestModel, auth, outbound }));
+    app.use('/api/requests', createRequestRoutes({ requestModel, auth, outbound }));
     app.use('/api/stream', createStreamRoute({ auth }));
     app.use('/api/keys', createApiKeyRoutes({ apiKeyModel, auth, config }));
     app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));

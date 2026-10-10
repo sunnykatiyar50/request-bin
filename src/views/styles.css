@@ -2221,6 +2221,51 @@ body.role-viewer .admin-only {
     resize: vertical;
 }
 
+/* Forwarding, in the bin form */
+.forward-editor summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--blue);
+}
+
+.forward-editor > * {
+    margin-top: 8px;
+}
+
+.forward-methods {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+}
+
+/* Replay, in the request detail pane */
+.replay-panel {
+    margin: 0 0 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.replay-line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 6px;
+}
+
+.replay-result {
+    margin: 0;
+    max-height: 220px;
+    overflow: auto;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-alt);
+    font-family: var(--mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* Export menu, in the request list toolbar */
 .menu-wrap {
     position: relative;

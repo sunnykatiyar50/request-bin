@@ -30,6 +30,7 @@ async function connect() {
             response_template INTEGER NOT NULL DEFAULT 0,
             response_delay_ms INTEGER NOT NULL DEFAULT 0,
             response_rules TEXT,
+            forward_config TEXT,
             created_at TEXT NOT NULL
         );
 
@@ -49,7 +50,8 @@ async function connect() {
             response_status INTEGER,
             response_content_type TEXT,
             response_body TEXT,
-            rule_name TEXT
+            rule_name TEXT,
+            forward_result TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_requests_bin ON requests (bin_id, id);
         CREATE INDEX IF NOT EXISTS idx_requests_created ON requests (created_at);
@@ -74,6 +76,7 @@ async function connect() {
         ['response_template', 'INTEGER NOT NULL DEFAULT 0'],
         ['response_delay_ms', 'INTEGER NOT NULL DEFAULT 0'],
         ['response_rules', 'TEXT'],
+        ['forward_config', 'TEXT'],
     ]) {
         if (!binColumns.includes(name)) db.exec(`ALTER TABLE bins ADD COLUMN ${name} ${definition}`);
     }
@@ -84,6 +87,7 @@ async function connect() {
         ['response_content_type', 'TEXT'],
         ['response_body', 'TEXT'],
         ['rule_name', 'TEXT'],
+        ['forward_result', 'TEXT'],
     ]) {
         if (!requestColumns.includes(name)) db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${definition}`);
     }
