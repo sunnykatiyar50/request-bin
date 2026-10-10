@@ -2266,6 +2266,51 @@ body.role-viewer .admin-only {
     word-break: break-word;
 }
 
+/* Tabs in the request detail pane */
+.detail-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-tabs .detail-tab {
+    padding: 8px 12px;
+    margin-bottom: -1px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.detail-tabs .detail-tab:hover {
+    color: var(--text);
+}
+
+.detail-tabs .detail-tab[aria-selected="true"] {
+    color: var(--blue);
+    border-bottom-color: var(--blue);
+    font-weight: 600;
+}
+
+.detail-tabs .detail-tab:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: -2px;
+}
+
+.detail-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.body-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Export menu, in the request list toolbar */
 .menu-wrap {
     position: relative;

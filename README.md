@@ -16,7 +16,7 @@ Built with Node.js and Express. Requests can be stored in SQLite (default), Post
   - **Forwarding and replay**: pass captured requests on to another URL, automatically per bin or by hand with **Replay**, only to hosts you allow. See [Forwarding and replay](#forwarding-and-replay).
   - Sensitive headers (`Authorization`, `Cookie`, `X-API-Key`, …) are **redacted** before storing, on by default and switchable per bin.
 - **Dashboard** with a resizable sidebar and a live request list (server-sent events: new requests appear as they arrive):
-  - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; **export** the matching or selected requests as **HAR** (for browser dev tools, Postman, Insomnia) or JSON; keyboard navigation (↑/↓ or j/k); a resizable detail pane with copy URL, **copy as cURL** and copy body.
+  - **Requests**: filter by bin, method, text (path, query, headers and body) and time range; bulk delete; **export** the matching or selected requests as **HAR** (for browser dev tools, Postman, Insomnia) or JSON; keyboard navigation (↑/↓ or j/k); a resizable detail pane with **tabs** (Request, Body, Headers, Response; your last choice is remembered, and the arrow keys move between them), copy URL, **copy as cURL**, copy body and Replay.
   - Bodies are shown according to their format, with a switch between views:
     - **JSON**: indented and colour-coded, or raw.
     - **Form** (`application/x-www-form-urlencoded`): a name/value table, or raw.
