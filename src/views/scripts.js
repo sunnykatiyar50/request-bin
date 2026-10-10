@@ -499,20 +499,22 @@ function setDetailTab(name, { focus = false } = {}) {
     });
 }
 
-function initDetailTabs() {
-    document.querySelectorAll('.detail-tab').forEach(tab => {
-        tab.addEventListener('click', () => setDetailTab(tab.dataset.detailTab));
-    });
-    // Arrow keys, Home and End move between the tabs
-    document.querySelector('.detail-tabs').addEventListener('keydown', event => {
-        const index = DETAIL_TABS.indexOf(activeDetailTab);
-        const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: DETAIL_TABS.length - 1 }[event.key];
-        if (target === undefined) return;
-        event.preventDefault();
-        setDetailTab(DETAIL_TABS[(target + DETAIL_TABS.length) % DETAIL_TABS.length], { focus: true });
-    });
-    setDetailTab(activeDetailTab);
-}
+// Clicks and keys are handled for the whole document, registered as soon as this script loads, so the
+// tabs work whatever else is (or isn't yet) set up
+document.addEventListener('click', event => {
+    const tab = event.target.closest && event.target.closest('.detail-tab');
+    if (tab) setDetailTab(tab.dataset.detailTab);
+});
+
+// Arrow keys, Home and End move between the tabs
+document.addEventListener('keydown', event => {
+    if (!event.target.closest || !event.target.closest('.detail-tabs')) return;
+    const index = DETAIL_TABS.indexOf(activeDetailTab);
+    const target = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: DETAIL_TABS.length - 1 }[event.key];
+    if (target === undefined) return;
+    event.preventDefault();
+    setDetailTab(DETAIL_TABS[(target + DETAIL_TABS.length) % DETAIL_TABS.length], { focus: true });
+});
 
 function showDetails(detail) {
     selectedDetail = detail;
@@ -1494,6 +1496,7 @@ function renderApiReference() {
 // --- Wiring ---
 
 window.addEventListener('DOMContentLoaded', () => {
+    setDetailTab(activeDetailTab);
     setSidebarCollapsed(readSetting('rb_sidebar_collapsed', 'no') === 'yes');
     renderApiReference();
 
@@ -1555,7 +1558,6 @@ window.addEventListener('DOMContentLoaded', () => {
     $('newBinButton').addEventListener('click', () => openBinForm());
     $('cancelBinButton').addEventListener('click', closeBinForm);
     buildForwardMethods();
-    initDetailTabs();
     $('binForwardEnabled').addEventListener('change', updateForwardSummary);
     const replayMethod = $('replayMethod');
     replayMethod.appendChild(new Option('Same method', ''));

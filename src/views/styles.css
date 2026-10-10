@@ -2266,43 +2266,63 @@ body.role-viewer .admin-only {
     word-break: break-word;
 }
 
-/* Tabs in the request detail pane */
+/* Tabs in the request detail pane: a row of buttons above an outlined content pane */
 .detail-tabs {
     display: flex;
-    gap: 2px;
-    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 .detail-tabs .detail-tab {
-    padding: 8px 12px;
-    margin-bottom: -1px;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    background: none;
-    color: var(--muted);
+    padding: 6px 14px;
+    border: 1px solid var(--control-border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
     font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
 }
 
 .detail-tabs .detail-tab:hover {
-    color: var(--text);
+    border-color: var(--blue);
+    color: var(--blue);
+    background: var(--surface-alt);
 }
 
 .detail-tabs .detail-tab[aria-selected="true"] {
-    color: var(--blue);
-    border-bottom-color: var(--blue);
+    background: var(--blue);
+    border-color: var(--blue);
+    color: #fff;
     font-weight: 600;
+}
+
+.detail-tabs .detail-tab[aria-selected="true"] .count-badge {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
 }
 
 .detail-tabs .detail-tab:focus-visible {
     outline: 2px solid var(--blue);
-    outline-offset: -2px;
+    outline-offset: 2px;
 }
 
 .detail-panel {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    padding: 14px;
+    border: 2px solid var(--control-border);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+/* The two main panes get a firmer outline too */
+.list-pane,
+.detail-pane {
+    border-color: var(--control-border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
 .body-tools {
