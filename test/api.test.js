@@ -670,6 +670,24 @@ describe('dashboard and server', () => {
         assert.match(res.headers['content-security-policy'], /script-src 'self'/);
     });
 
+    test('serves the pages with versioned asset URLs that load, and never cached', async () => {
+        for (const [url, cookie] of [['/', await login()], ['/login.html', '']]) {
+            const res = await request(app).get(url).set('Cookie', cookie);
+            if (url === '/login.html') assert.equal(res.status, 200);
+            assert.equal(res.headers['cache-control'], 'no-store');
+            const assets = [...res.text.matchAll(/(?:src|href)="([a-z.]+\.(?:js|css))\?v=([0-9a-f]{10})"/g)].map(m => m[1]);
+            assert.ok(assets.includes('styles.css') && assets.includes('theme.js'), `${url}: ${assets}`);
+            for (const asset of assets) {
+                const file = await request(app).get(`/${asset}?v=anything`);
+                assert.equal(file.status, 200, asset);
+                assert.equal(file.headers['cache-control'], 'no-cache', asset);
+            }
+        }
+        const dashboard = await request(app).get('/').set('Cookie', await login());
+        assert.match(dashboard.text, /src="scripts\.js\?v=[0-9a-f]{10}"/);
+        assert.match(dashboard.text, /src="formatters\.js\?v=[0-9a-f]{10}"/);
+    });
+
     test('rejects a wrong password', async () => {
         assert.equal((await request(app).post('/auth/login').send({ username: 'opsadmin', password: 'nope' })).status, 401);
     });

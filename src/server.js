@@ -10,6 +10,7 @@ const createApiKeyRoutes = require('./routes/apiKeyRoutes');
 const { logToFile } = require('./utils/logger');
 const { createOutbound } = require('./utils/outbound');
 const { createForwarder } = require('./utils/forward');
+const { createPageServer } = require('./utils/pages');
 
 const viewsDir = path.join(__dirname, 'views');
 
@@ -75,17 +76,19 @@ function createApp({ config, binModel, requestModel, apiKeyModel }) {
     app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
     // The dashboard needs a session; the login page and static assets are public
+    const pages = createPageServer(viewsDir);
     const dashboard = (req, res) => {
         if (!auth.currentUser(req)) return res.redirect('/login.html');
-        res.sendFile(path.join(viewsDir, 'index.html'));
+        pages.send(res, 'index.html');
     };
     app.get('/', dashboard);
     app.get('/index.html', dashboard);
     app.get('/login.html', (req, res) => {
         if (auth.currentUser(req)) return res.redirect('/');
-        res.sendFile(path.join(viewsDir, 'login.html'));
+        pages.send(res, 'login.html');
     });
-    app.use(express.static(viewsDir, { index: false }));
+    // Assets are always revalidated; the pages above give each one a URL that changes with its content
+    app.use(express.static(viewsDir, { index: false, setHeaders: res => res.set('Cache-Control', 'no-cache') }));
 
     // Malformed JSON and oversized bodies come through here as 4xx errors from express.json
     // eslint-disable-next-line no-unused-vars
