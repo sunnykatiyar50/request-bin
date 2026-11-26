@@ -1,6 +1,6 @@
 {
   "name": "request-bin",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "Self-hosted HTTP request collector: capture any request sent to a bin URL and inspect it, parsed and prettified, in a web dashboard.",
   "main": "src/app.js",
   "scripts": {
